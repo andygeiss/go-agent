@@ -2,7 +2,8 @@ package events
 
 import "github.com/andygeiss/go-agent/internal/domain/agent/immutable"
 
-// EventToolCallExecuted represents a tool call executed event.
+// EventToolCallExecuted is published after each tool call completes.
+// The Success field indicates whether the tool executed without error.
 type EventToolCallExecuted struct {
 	AgentID    immutable.AgentID    `json:"agent_id"`
 	TaskID     immutable.TaskID     `json:"task_id"`

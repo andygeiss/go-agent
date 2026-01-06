@@ -2,7 +2,8 @@ package events
 
 import "github.com/andygeiss/go-agent/internal/domain/agent/immutable"
 
-// EventTaskCompleted represents a task completed event.
+// EventTaskCompleted is published when a task finishes successfully.
+// It includes the final output and iteration count for metrics/logging.
 type EventTaskCompleted struct {
 	Name       string            `json:"name"`
 	Output     string            `json:"output"`

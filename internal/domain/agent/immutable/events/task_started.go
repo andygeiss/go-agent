@@ -2,7 +2,8 @@ package events
 
 import "github.com/andygeiss/go-agent/internal/domain/agent/immutable"
 
-// EventTaskStarted represents a task started event.
+// EventTaskStarted is published when an agent begins executing a task.
+// Subscribers can use this to track task progress or log execution starts.
 type EventTaskStarted struct {
 	AgentID immutable.AgentID `json:"agent_id"`
 	TaskID  immutable.TaskID  `json:"task_id"`

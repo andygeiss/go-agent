@@ -2,7 +2,8 @@ package events
 
 import "github.com/andygeiss/go-agent/internal/domain/agent/immutable"
 
-// EventTaskFailed represents a task failed event.
+// EventTaskFailed is published when a task terminates with an error.
+// This includes LLM errors, max iterations exceeded, or explicit failures.
 type EventTaskFailed struct {
 	AgentID    immutable.AgentID `json:"agent_id"`
 	Error      string            `json:"error"`
