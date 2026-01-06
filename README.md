@@ -123,17 +123,17 @@ The project provides a reusable agent library in `pkg/agent/`:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      Application (CLI)                       │
+│                      Application (CLI)                      │
 └─────────────────────────────┬───────────────────────────────┘
                               │
 ┌─────────────────────────────▼───────────────────────────────┐
-│                     pkg/agent Library                        │
+│                     pkg/agent Library                       │
 │  • Agent, Task, Message     • TaskService (Agent Loop)      │
 │  • LLMClient interface      • ToolExecutor interface        │
 └─────────────────────────────┬───────────────────────────────┘
                               │ implements
 ┌─────────────────────────────▼───────────────────────────────┐
-│                    Adapter Layer                             │
+│                    Adapter Layer                            │
 │  • OpenAIClient (LLM)  • ToolExecutor  • EventPublisher     │
 └─────────────────────────────────────────────────────────────┘
 ```
