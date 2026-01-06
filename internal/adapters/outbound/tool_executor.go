@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/andygeiss/go-agent/internal/domain/agent/immutable"
+	"github.com/andygeiss/go-agent/pkg/agent"
 )
 
 // ToolExecutor implements the agent.ToolExecutor interface.
@@ -55,10 +55,10 @@ func (e *ToolExecutor) GetAvailableTools() []string {
 }
 
 // GetToolDefinitions returns the tool definitions for the LLM.
-func (e *ToolExecutor) GetToolDefinitions() []immutable.ToolDefinition {
-	return []immutable.ToolDefinition{
-		immutable.NewToolDefinition("get_current_time", "Get the current date and time"),
-		immutable.NewToolDefinition("calculate", "Perform a simple arithmetic calculation").
+func (e *ToolExecutor) GetToolDefinitions() []agent.ToolDefinition {
+	return []agent.ToolDefinition{
+		agent.NewToolDefinition("get_current_time", "Get the current date and time"),
+		agent.NewToolDefinition("calculate", "Perform a simple arithmetic calculation").
 			WithParameter("expression", "The arithmetic expression to evaluate (e.g., '2 + 2')"),
 	}
 }

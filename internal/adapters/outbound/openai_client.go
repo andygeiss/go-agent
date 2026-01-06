@@ -9,9 +9,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/andygeiss/go-agent/internal/domain/agent/aggregates"
-	"github.com/andygeiss/go-agent/internal/domain/agent/entities"
-	"github.com/andygeiss/go-agent/internal/domain/agent/immutable"
+	"github.com/andygeiss/go-agent/pkg/agent"
 	"github.com/andygeiss/go-agent/pkg/openai"
 )
 
@@ -43,26 +41,26 @@ func (c *OpenAIClient) WithHTTPClient(httpClient *http.Client) *OpenAIClient {
 
 // Run sends the conversation messages to LM Studio and returns the response.
 // It translates between domain types and the OpenAI-compatible API format.
-func (c *OpenAIClient) Run(ctx context.Context, messages []entities.Message, tools []immutable.ToolDefinition) (aggregates.LLMResponse, error) {
+func (c *OpenAIClient) Run(ctx context.Context, messages []agent.Message, tools []agent.ToolDefinition) (agent.LLMResponse, error) {
 	apiMessages := c.convertToAPIMessages(messages)
 	apiTools := c.convertToAPITools(tools)
 
 	respPayload, err := c.sendRequest(ctx, apiMessages, apiTools)
 	if err != nil {
-		return aggregates.LLMResponse{}, err
+		return agent.LLMResponse{}, err
 	}
 
 	return c.convertToResponse(respPayload)
 }
 
 // convertToAPIMessages converts domain messages to API format.
-func (c *OpenAIClient) convertToAPIMessages(messages []entities.Message) []openai.Message {
+func (c *OpenAIClient) convertToAPIMessages(messages []agent.Message) []openai.Message {
 	apiMessages := make([]openai.Message, len(messages))
 	for i, msg := range messages {
 		apiMessages[i] = openai.Message{
 			Role:       string(msg.Role),
 			Content:    msg.Content,
-			ToolCallID: msg.ToolCallID,
+			ToolCallID: string(msg.ToolCallID),
 		}
 		if len(msg.ToolCalls) > 0 {
 			apiMessages[i].ToolCalls = make([]openai.ToolCall, len(msg.ToolCalls))
@@ -113,20 +111,20 @@ func (c *OpenAIClient) sendRequest(ctx context.Context, apiMessages []openai.Mes
 }
 
 // convertToResponse converts the API response to domain types.
-func (c *OpenAIClient) convertToResponse(respPayload *openai.ChatCompletionResponse) (aggregates.LLMResponse, error) {
+func (c *OpenAIClient) convertToResponse(respPayload *openai.ChatCompletionResponse) (agent.LLMResponse, error) {
 	choice := respPayload.GetFirstChoice()
 	if choice == nil {
-		return aggregates.LLMResponse{}, errors.New("no choices in response")
+		return agent.LLMResponse{}, errors.New("no choices in response")
 	}
 
-	domainMessage := entities.NewMessage(immutable.Role(choice.Message.Role), choice.Message.Content)
+	domainMessage := agent.NewMessage(agent.Role(choice.Message.Role), choice.Message.Content)
 
-	var domainToolCalls []entities.ToolCall
+	var domainToolCalls []agent.ToolCall
 	if len(choice.Message.ToolCalls) > 0 {
-		domainToolCalls = make([]entities.ToolCall, len(choice.Message.ToolCalls))
+		domainToolCalls = make([]agent.ToolCall, len(choice.Message.ToolCalls))
 		for i, tc := range choice.Message.ToolCalls {
-			domainToolCalls[i] = entities.NewToolCall(
-				immutable.ToolCallID(tc.ID),
+			domainToolCalls[i] = agent.NewToolCall(
+				agent.ToolCallID(tc.ID),
 				tc.Function.Name,
 				tc.Function.Arguments,
 			)
@@ -134,11 +132,11 @@ func (c *OpenAIClient) convertToResponse(respPayload *openai.ChatCompletionRespo
 		domainMessage = domainMessage.WithToolCalls(domainToolCalls)
 	}
 
-	return aggregates.NewLLMResponse(domainMessage, choice.FinishReason).WithToolCalls(domainToolCalls), nil
+	return agent.NewLLMResponse(domainMessage, choice.FinishReason).WithToolCalls(domainToolCalls), nil
 }
 
 // convertToAPITools converts domain tool definitions to API format.
-func (c *OpenAIClient) convertToAPITools(tools []immutable.ToolDefinition) []openai.Tool {
+func (c *OpenAIClient) convertToAPITools(tools []agent.ToolDefinition) []openai.Tool {
 	if len(tools) == 0 {
 		return nil
 	}

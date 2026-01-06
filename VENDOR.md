@@ -19,10 +19,13 @@ This document catalogs the external vendor libraries used in this project, expla
 | Package | Description | Used In |
 |---------|-------------|---------|
 | `assert` | Minimal test assertion helper | All `*_test.go` files |
+| `messaging` | Message dispatcher for event publishing | `adapters/outbound/event_publisher.go` |
+| `service` | Function types for messaging handlers | `adapters/outbound/event_publisher_test.go` |
 
 #### When to Use
 
 - **Testing assertions**: Use `assert.That(t, description, actual, expected)` for all test assertions
+- **Event publishing**: Use `messaging.Dispatcher` for publishing domain events
 - Provides clear, descriptive failure messages
 - Follows the Arrange-Act-Assert pattern naturally
 
@@ -60,7 +63,6 @@ The library offers many other packages that could be useful for future features:
 | Package | Potential Use Case |
 |---------|-------------------|
 | `stability` | Circuit breaker, retry, throttle for LLM API calls |
-| `messaging` | Kafka-backed event publishing (currently using no-op publisher) |
 | `logging` | Structured JSON logging |
 | `security` | AES encryption, password hashing if needed |
 | `slices` | Generic slice utilities (Map, Filter, Unique) |
@@ -119,8 +121,10 @@ These do not affect the runtime unless their packages are imported.
 - **Future**: Consider `cloud-native-utils/stability` for resilience patterns
 
 ### Event Publishing
-- **Current**: No-op publisher in adapters
-- **Future**: Consider `cloud-native-utils/messaging` for Kafka integration
+- **Current**: `EventPublisher` adapter wrapping `cloud-native-utils/messaging`
+- **Pattern**: Events are JSON-encoded and published via dispatcher
+- **Testing**: Mock dispatcher for unit tests (`event_publisher_test.go`)
+- **Future**: Consider full Kafka integration for production
 
 ---
 

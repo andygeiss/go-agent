@@ -1,10 +1,10 @@
-package immutable_test
+package agent_test
 
 import (
 	"testing"
 
 	"github.com/andygeiss/cloud-native-utils/assert"
-	"github.com/andygeiss/go-agent/internal/domain/agent/immutable"
+	"github.com/andygeiss/go-agent/pkg/agent"
 )
 
 func Test_ToolDefinition_NewToolDefinition_With_ValidParams_Should_ReturnDefinition(t *testing.T) {
@@ -13,7 +13,7 @@ func Test_ToolDefinition_NewToolDefinition_With_ValidParams_Should_ReturnDefinit
 	description := "Search the web"
 
 	// Act
-	td := immutable.NewToolDefinition(name, description)
+	td := agent.NewToolDefinition(name, description)
 
 	// Assert
 	assert.That(t, "tool definition name must match", td.Name, name)
@@ -23,7 +23,7 @@ func Test_ToolDefinition_NewToolDefinition_With_ValidParams_Should_ReturnDefinit
 
 func Test_ToolDefinition_WithParameter_With_Params_Should_HaveParameters(t *testing.T) {
 	// Arrange
-	td := immutable.NewToolDefinition("search", "Search the web")
+	td := agent.NewToolDefinition("search", "Search the web")
 
 	// Act
 	td = td.WithParameter("query", "The search query")

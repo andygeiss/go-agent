@@ -1,0 +1,48 @@
+package agent
+
+// ToolCall represents a tool invocation requested by the LLM.
+// It tracks the tool name, arguments, and execution result.
+type ToolCall struct {
+	ID        ToolCallID     // Unique identifier for this call
+	Name      string         // Name of the tool to execute
+	Arguments string         // JSON-encoded arguments
+	Result    string         // Execution result
+	Error     string         // Error message if failed
+	Status    ToolCallStatus // Current execution state
+}
+
+// NewToolCall creates a new ToolCall with the given ID, name, and arguments.
+func NewToolCall(id ToolCallID, name string, arguments string) ToolCall {
+	return ToolCall{
+		ID:        id,
+		Name:      name,
+		Arguments: arguments,
+		Status:    ToolCallStatusPending,
+	}
+}
+
+// Complete marks the tool call as successfully completed with the given result.
+func (tc *ToolCall) Complete(result string) {
+	tc.Result = result
+	tc.Status = ToolCallStatusCompleted
+}
+
+// Execute marks the tool call as currently executing.
+func (tc *ToolCall) Execute() {
+	tc.Status = ToolCallStatusExecuting
+}
+
+// Fail marks the tool call as failed with the given error message.
+func (tc *ToolCall) Fail(errMsg string) {
+	tc.Error = errMsg
+	tc.Status = ToolCallStatusFailed
+}
+
+// ToMessage converts the tool call result to a tool response message.
+func (tc *ToolCall) ToMessage() Message {
+	content := tc.Result
+	if tc.Status == ToolCallStatusFailed {
+		content = "Error: " + tc.Error
+	}
+	return NewMessage(RoleTool, content).WithToolCallID(tc.ID)
+}

@@ -2,10 +2,10 @@
 
 ## 1. Project Purpose
 
-This repository implements a **Go-based AI Agent** using Domain-Driven Design (DDD) and Hexagonal Architecture principles. The agent follows an **observe → decide → act → update** loop pattern to interact with Large Language Models (LLMs) and execute tools.
+This repository implements a **Go-based AI Agent** as a reusable library (`pkg/agent/`). The agent follows an **observe → decide → act → update** loop pattern to interact with Large Language Models (LLMs) and execute tools.
 
 The project demonstrates:
-- Clean architecture with clear separation between domain logic and infrastructure
+- Clean, reusable agent library with minimal dependencies
 - Integration with OpenAI-compatible APIs (e.g., LM Studio)
 - Tool calling capabilities for LLM agents
 - Event-driven patterns for observability
@@ -30,30 +30,31 @@ The project demonstrates:
 
 ## 3. High-Level Architecture
 
-The project follows **Hexagonal Architecture** (Ports & Adapters) with **DDD** tactical patterns:
+The project provides a **reusable agent library** in `pkg/agent/` with adapter implementations in `internal/`:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         cmd/cli                                  │
-│                    (Application Entry Point)                     │
+│                         cmd/cli                                 │
+│                    (Application Entry Point)                    │
 └────────────────────────────┬────────────────────────────────────┘
                              │
 ┌────────────────────────────▼────────────────────────────────────┐
-│                    internal/domain/agent                         │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
-│  │  aggregates  │  │   entities   │  │       immutable        │ │
-│  │   (Agent,    │  │  (Message,   │  │  (IDs, Roles, Events,  │ │
-│  │ LLMResponse) │  │ Task, ToolCall)│ │   ToolDefinition)     │ │
-│  └──────────────┘  └──────────────┘  └────────────────────────┘ │
-│  ┌──────────────┐  ┌──────────────┐                             │
-│  │    ports     │  │   services   │                             │
-│  │ (LLMClient,  │  │ (TaskService)│                             │
-│  │ToolExecutor) │  │              │                             │
-│  └──────────────┘  └──────────────┘                             │
+│                        pkg/agent                                │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  Agent, Task, Message, ToolCall, Result, LLMResponse     │   │
+│  │  TaskService, LLMClient, ToolExecutor, EventPublisher    │   │
+│  │  Types: AgentID, TaskID, ToolCallID, Role, Status        │   │
+│  │  ToolDefinition                                          │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                    pkg/agent/events                      │   │
+│  │  EventTaskStarted, EventTaskCompleted, EventTaskFailed,  │   │
+│  │  EventToolCallExecuted                                   │   │
+│  └──────────────────────────────────────────────────────────┘   │
 └────────────────────────────┬────────────────────────────────────┘
-                             │ implements
+                             │ implements interfaces
 ┌────────────────────────────▼────────────────────────────────────┐
-│                 internal/adapters/outbound                       │
+│                 internal/adapters/outbound                      │
 │  ┌────────────────┐  ┌────────────────┐  ┌──────────────────┐   │
 │  │  OpenAIClient  │  │  ToolExecutor  │  │  EventPublisher  │   │
 │  │ (LLM adapter)  │  │ (Tool adapter) │  │ (Event adapter)  │   │
@@ -61,7 +62,7 @@ The project follows **Hexagonal Architecture** (Ports & Adapters) with **DDD** t
 └─────────────────────────────────────────────────────────────────┘
                              │ uses
 ┌────────────────────────────▼────────────────────────────────────┐
-│                           pkg/                                   │
+│                           pkg/                                  │
 │  ┌────────────────┐  ┌────────────────┐                         │
 │  │     openai     │  │     event      │                         │
 │  │ (API payloads) │  │  (interfaces)  │                         │
@@ -70,9 +71,9 @@ The project follows **Hexagonal Architecture** (Ports & Adapters) with **DDD** t
 ```
 
 ### Architectural Style
-- **Hexagonal Architecture**: Domain logic is isolated; adapters handle external communication
-- **DDD Tactical Patterns**: Aggregates, Entities, Value Objects (immutables), Domain Events, Services
+- **Reusable Library**: Agent framework exported via `pkg/agent/`
 - **Agent Loop Pattern**: observe → decide → act → update
+- **Interface-based Design**: LLMClient, ToolExecutor, EventPublisher interfaces
 
 ---
 
@@ -82,22 +83,31 @@ The project follows **Hexagonal Architecture** (Ports & Adapters) with **DDD** t
 go-agent/
 ├── cmd/
 │   └── cli/                    # CLI application entry point
-│       └── main.go
+│       ├── main.go
+│       └── main_test.go
 ├── internal/
-│   ├── adapters/
-│   │   └── outbound/           # Infrastructure adapters (LLM, tools, events)
-│   │       ├── openai_client.go
-│   │       ├── tool_executor.go
-│   │       └── event_publisher.go
-│   └── domain/
-│       └── agent/              # Agent bounded context
-│           ├── aggregates/     # Aggregate roots (Agent, LLMResponse)
-│           ├── entities/       # Domain entities (Message, Task, ToolCall, Result)
-│           ├── immutable/      # Value objects and constants
-│           │   └── events/     # Domain event definitions
-│           ├── ports/          # Port interfaces (LLMClient, ToolExecutor)
-│           └── services/       # Domain services (TaskService)
+│   └── adapters/
+│       └── outbound/           # Infrastructure adapters (LLM, tools, events)
+│           ├── openai_client.go
+│           ├── tool_executor.go
+│           ├── tool_executor_test.go
+│           ├── event_publisher.go
+│           └── event_publisher_test.go
 ├── pkg/
+│   ├── agent/                  # Reusable agent library
+│   │   ├── types.go            # ID types, Role, Status constants
+│   │   ├── agent.go            # Agent aggregate root
+│   │   ├── llm_response.go     # LLM response wrapper
+│   │   ├── message.go          # Conversation messages
+│   │   ├── task.go             # Task entity
+│   │   ├── tool_call.go        # Tool call entity
+│   │   ├── result.go           # Task execution result
+│   │   ├── tool_definition.go  # Tool definition for LLM
+│   │   ├── ports.go            # Interfaces (LLMClient, ToolExecutor, EventPublisher)
+│   │   ├── task_service.go     # Agent loop orchestration
+│   │   └── events/             # Domain events
+│   │       ├── events.go       # All event types and topic constants
+│   │       └── events_test.go
 │   ├── event/                  # Reusable event interfaces
 │   └── openai/                 # OpenAI API payload structures
 ├── tools/                      # Development/profiling scripts
@@ -112,15 +122,10 @@ go-agent/
 
 | What | Where |
 |------|-------|
-| **Domain logic** | `internal/domain/agent/` |
-| **Aggregate roots** | `internal/domain/agent/aggregates/` |
-| **Domain entities** | `internal/domain/agent/entities/` |
-| **Value objects, IDs, constants** | `internal/domain/agent/immutable/` |
-| **Domain events** | `internal/domain/agent/immutable/events/` |
-| **Port interfaces** | `internal/domain/agent/ports/` |
-| **Domain services** | `internal/domain/agent/services/` |
+| **Agent library code** | `pkg/agent/` |
+| **Domain events** | `pkg/agent/events/` |
 | **Infrastructure adapters** | `internal/adapters/outbound/` |
-| **Reusable packages** | `pkg/` |
+| **Reusable utilities** | `pkg/` |
 | **Application entry points** | `cmd/` |
 | **Tests** | Same directory as source, `*_test.go` suffix |
 
@@ -141,9 +146,9 @@ go-agent/
 
 | Element | Convention | Example |
 |---------|------------|---------|
-| **Files** | `snake_case.go` | `task_service.go`, `llm_client.go` |
+| **Files** | `snake_case.go` | `task_service.go`, `llm_response.go` |
 | **Test files** | `*_test.go` | `task_service_test.go` |
-| **Packages** | lowercase, single word | `aggregates`, `entities`, `immutable` |
+| **Packages** | lowercase, single word | `agent`, `events`, `openai` |
 | **Structs** | PascalCase | `Agent`, `TaskService`, `LLMResponse` |
 | **Interfaces** | PascalCase, verb or noun | `LLMClient`, `ToolExecutor`, `EventPublisher` |
 | **Constructors** | `New<Type>` | `NewAgent()`, `NewTask()` |
@@ -151,7 +156,7 @@ go-agent/
 | **ID types** | `<Entity>ID` | `AgentID`, `TaskID`, `ToolCallID` |
 | **Status types** | `<Entity>Status` | `TaskStatus`, `ToolCallStatus` |
 | **Event types** | `Event<Action>` | `EventTaskStarted`, `EventTaskCompleted` |
-| **Event topics** | `EventTopic<Action>` | `EventTopicTaskStarted` |
+| **Event topics** | `Topic<Action>` | `TopicTaskStarted` |
 | **Constants** | PascalCase with prefix | `RoleSystem`, `TaskStatusPending` |
 
 ### 5.3 Error Handling & Logging
@@ -178,10 +183,10 @@ go-agent/
 ```go
 func Test_Agent_NewAgent_With_ValidParams_Should_Return_Agent(t *testing.T) {
     // Arrange & Act
-    agent := aggregates.NewAgent("test-id", "test prompt")
+    ag := agent.NewAgent("test-id", "test prompt")
     
     // Assert
-    assert.That(t, "ID must match", agent.ID, immutable.AgentID("test-id"))
+    assert.That(t, "ID must match", ag.ID, agent.AgentID("test-id"))
 }
 ```
 
@@ -203,17 +208,18 @@ Key lint rules:
 
 ### Event System
 - **Interface**: `pkg/event.Event` (must implement `Topic() string`)
-- **Publisher**: `pkg/event.EventPublisher` interface
-- **Domain events**: `internal/domain/agent/immutable/events/`
-- Events are immutable structs with builder pattern (`With*` methods)
+- **Publisher**: `agent.EventPublisher` interface in `pkg/agent/ports.go`
+- **Domain events**: `pkg/agent/events/`
+  - `events.go` - All event types and topic constants
+- Events are immutable structs with constructor functions
 
 ### Tool System
-- **Interface**: `ports.ToolExecutor`
+- **Interface**: `agent.ToolExecutor` in `pkg/agent/ports.go`
 - **Registration**: Tools registered via `RegisterTool(name, fn)` in adapters
-- **Definition**: `immutable.ToolDefinition` with name, description, parameters
+- **Definition**: `agent.ToolDefinition` with name, description, parameters
 
 ### LLM Integration
-- **Interface**: `ports.LLMClient`
+- **Interface**: `agent.LLMClient` in `pkg/agent/ports.go`
 - **Implementation**: OpenAI-compatible API adapter in `adapters/outbound/`
 - **Configuration**: Base URL and model via environment/flags
 
@@ -224,29 +230,33 @@ Key lint rules:
 
 ---
 
-## 7. Using This Repo as a Template
+## 7. Using the Agent Library
 
-### Invariants (Must Preserve)
-- Hexagonal architecture boundaries (domain ↔ adapters)
-- Port interfaces in `internal/domain/agent/ports/`
-- Immutable value objects in `internal/domain/agent/immutable/`
-- Event-driven patterns for observability
-- Test naming conventions and structure
+### Import the Library
+```go
+import (
+    "github.com/andygeiss/go-agent/pkg/agent"
+    "github.com/andygeiss/go-agent/pkg/agent/events"
+)
+```
+
+### Implement the Interfaces
+1. Implement `agent.LLMClient` for your LLM provider
+2. Implement `agent.ToolExecutor` for your tool registry
+3. Implement `agent.EventPublisher` for observability
+
+### Create and Run Tasks
+```go
+taskService := agent.NewTaskService(llmClient, toolExecutor, publisher)
+ag := agent.NewAgent("my-agent", "You are a helpful assistant")
+task := agent.NewTask("task-1", "chat", "Hello!")
+result, err := taskService.RunTask(ctx, &ag, task)
+```
 
 ### Customization Points
-- Add new tools in `internal/adapters/outbound/tool_executor.go`
-- Add new domain events in `internal/domain/agent/immutable/events/`
-- Add new entities in `internal/domain/agent/entities/`
-- Implement new adapters in `internal/adapters/outbound/`
-- Add new CLI commands in `cmd/`
-
-### Steps to Create a New Project
-1. Clone/copy this repository
-2. Update `go.mod` module path
-3. Update `.env.example` with project-specific variables
-4. Update `APP_*` variables in `.env`
-5. Add domain-specific entities, tools, and events
-6. Implement new adapters as needed
+- Add new tools by implementing `ToolExecutor`
+- Subscribe to events: `TaskStarted`, `TaskCompleted`, `TaskFailed`, `ToolCallExecuted`
+- Extend agent capabilities by composing with your own types
 
 ---
 

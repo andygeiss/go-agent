@@ -10,10 +10,7 @@ import (
 
 	"github.com/andygeiss/cloud-native-utils/messaging"
 	"github.com/andygeiss/go-agent/internal/adapters/outbound"
-	"github.com/andygeiss/go-agent/internal/domain/agent/aggregates"
-	"github.com/andygeiss/go-agent/internal/domain/agent/entities"
-	"github.com/andygeiss/go-agent/internal/domain/agent/immutable"
-	"github.com/andygeiss/go-agent/internal/domain/agent/services"
+	"github.com/andygeiss/go-agent/pkg/agent"
 )
 
 const defaultSystemPrompt = `You are a helpful AI assistant. You can use tools to help answer questions.
@@ -43,15 +40,15 @@ func main() {
 	llmClient := outbound.NewOpenAIClient(*baseURL, *model)
 	toolExecutor := outbound.NewToolExecutor()
 	publisher := outbound.NewEventPublisher(dispatcher)
-	taskService := services.NewTaskService(llmClient, toolExecutor, publisher)
+	taskService := agent.NewTaskService(llmClient, toolExecutor, publisher)
 
 	// Create the agent
-	agentInstance := aggregates.NewAgent("demo-agent", defaultSystemPrompt)
+	agentInstance := agent.NewAgent("demo-agent", defaultSystemPrompt)
 
 	runInteractiveChat(taskService, &agentInstance)
 }
 
-func runInteractiveChat(taskService *services.TaskService, agent *aggregates.Agent) {
+func runInteractiveChat(taskService *agent.TaskService, ag *agent.Agent) {
 	scanner := bufio.NewScanner(os.Stdin)
 	taskCounter := 0
 
@@ -72,7 +69,7 @@ func runInteractiveChat(taskService *services.TaskService, agent *aggregates.Age
 		}
 
 		if input == "clear" {
-			agent.ClearMessages()
+			ag.ClearMessages()
 			fmt.Println("🗑️  Conversation cleared.")
 			fmt.Println()
 			continue
@@ -80,11 +77,11 @@ func runInteractiveChat(taskService *services.TaskService, agent *aggregates.Age
 
 		// Create and run a task
 		taskCounter++
-		taskID := immutable.TaskID(fmt.Sprintf("task-%d", taskCounter))
-		task := entities.NewTask(taskID, "chat", input)
+		taskID := agent.TaskID(fmt.Sprintf("task-%d", taskCounter))
+		task := agent.NewTask(taskID, "chat", input)
 
 		ctx := context.Background()
-		result, err := taskService.RunTask(ctx, agent, task)
+		result, err := taskService.RunTask(ctx, ag, task)
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n\n", err)
 			continue

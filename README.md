@@ -9,12 +9,11 @@
 [![Releases](https://img.shields.io/github/v/release/andygeiss/go-agent)](https://github.com/andygeiss/go-agent/releases)
 [![Go Report Card](https://goreportcard.com/badge/github.com/andygeiss/go-agent)](https://goreportcard.com/report/github.com/andygeiss/go-agent)
 
-A Go-based AI Agent implementing Domain-Driven Design (DDD) and Hexagonal Architecture. The agent follows an **observe → decide → act → update** loop pattern to interact with Large Language Models and execute tools.
+A Go-based AI Agent library implementing the **Observe → Decide → Act → Update** loop pattern to interact with Large Language Models (LLMs) and execute tools.
 
 ## Features
 
-- **Clean Architecture** - Hexagonal Architecture with clear separation between domain logic and infrastructure
-- **DDD Patterns** - Aggregates, Entities, Value Objects, Domain Events, and Services
+- **Reusable Library** - Import `pkg/agent` to build LLM-powered applications
 - **LLM Integration** - OpenAI-compatible API support (works with LM Studio, OpenAI, etc.)
 - **Tool Calling** - Extensible tool system for agent capabilities
 - **Event-Driven** - Domain events for observability and extensibility
@@ -72,14 +71,17 @@ Goodbye! 👋
 go-agent/
 ├── cmd/cli/                    # CLI application entry point
 ├── internal/
-│   ├── adapters/outbound/      # Infrastructure adapters (LLM, tools, events)
-│   └── domain/agent/           # Agent bounded context
-│       ├── aggregates/         # Aggregate roots (Agent, LLMResponse)
-│       ├── entities/           # Domain entities (Message, Task, ToolCall)
-│       ├── immutable/          # Value objects, IDs, events
-│       ├── ports/              # Port interfaces
-│       └── services/           # Domain services (TaskService)
-├── pkg/                        # Reusable packages
+│   └── adapters/outbound/      # Infrastructure adapters (LLM, tools, events)
+├── pkg/
+│   ├── agent/                  # Reusable agent library
+│   │   ├── types.go            # ID types, Role, Status constants
+│   │   ├── agent.go            # Agent aggregate
+│   │   ├── task.go             # Task entity
+│   │   ├── message.go          # Conversation messages
+│   │   ├── tool_call.go        # Tool call entity
+│   │   ├── ports.go            # Interfaces (LLMClient, ToolExecutor)
+│   │   ├── task_service.go     # Agent loop orchestration
+│   │   └── events/             # Domain events
 │   ├── event/                  # Event interfaces
 │   └── openai/                 # OpenAI API structures
 └── tools/                      # Development scripts
@@ -117,7 +119,7 @@ just run -- -url http://localhost:1234 -model your-model
 
 ## Architecture
 
-The project follows **Hexagonal Architecture** (Ports & Adapters) with **DDD** tactical patterns:
+The project provides a reusable agent library in `pkg/agent/`:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -125,15 +127,31 @@ The project follows **Hexagonal Architecture** (Ports & Adapters) with **DDD** t
 └─────────────────────────────┬───────────────────────────────┘
                               │
 ┌─────────────────────────────▼───────────────────────────────┐
-│                     Domain Layer                             │
-│  • Agent (Aggregate Root)    • TaskService (Domain Service) │
-│  • Message, Task (Entities)  • LLMClient, ToolExecutor (Ports)│
+│                     pkg/agent Library                        │
+│  • Agent, Task, Message     • TaskService (Agent Loop)      │
+│  • LLMClient interface      • ToolExecutor interface        │
 └─────────────────────────────┬───────────────────────────────┘
                               │ implements
 ┌─────────────────────────────▼───────────────────────────────┐
 │                    Adapter Layer                             │
 │  • OpenAIClient (LLM)  • ToolExecutor  • EventPublisher     │
 └─────────────────────────────────────────────────────────────┘
+```
+
+### Using the Library
+
+```go
+import (
+    "github.com/andygeiss/go-agent/pkg/agent"
+)
+
+// Create agent infrastructure
+taskService := agent.NewTaskService(llmClient, toolExecutor, publisher)
+ag := agent.NewAgent("my-agent", "You are a helpful assistant")
+
+// Run a task
+task := agent.NewTask("task-1", "chat", "Hello!")
+result, err := taskService.RunTask(ctx, &ag, task)
 ```
 
 The agent operates in a continuous loop:

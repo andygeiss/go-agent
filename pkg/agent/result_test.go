@@ -1,20 +1,19 @@
-package entities_test
+package agent_test
 
 import (
 	"testing"
 
 	"github.com/andygeiss/cloud-native-utils/assert"
-	"github.com/andygeiss/go-agent/internal/domain/agent/entities"
-	"github.com/andygeiss/go-agent/internal/domain/agent/immutable"
+	"github.com/andygeiss/go-agent/pkg/agent"
 )
 
 func Test_Result_NewResult_With_Success_Should_ReturnSuccessResult(t *testing.T) {
 	// Arrange
-	taskID := immutable.TaskID("task-1")
+	taskID := agent.TaskID("task-1")
 	output := "Task completed successfully"
 
 	// Act
-	result := entities.NewResult(taskID, true, output)
+	result := agent.NewResult(taskID, true, output)
 
 	// Assert
 	assert.That(t, "result task ID must match", result.TaskID, taskID)
@@ -24,7 +23,7 @@ func Test_Result_NewResult_With_Success_Should_ReturnSuccessResult(t *testing.T)
 
 func Test_Result_WithError_With_ErrorMessage_Should_HaveError(t *testing.T) {
 	// Arrange
-	result := entities.NewResult("task-1", false, "")
+	result := agent.NewResult("task-1", false, "")
 
 	// Act
 	result = result.WithError("something failed")
