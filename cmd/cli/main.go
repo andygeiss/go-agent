@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/andygeiss/cloud-native-utils/messaging"
 	"github.com/andygeiss/go-agent/internal/adapters/outbound"
 	"github.com/andygeiss/go-agent/internal/domain/agent/aggregates"
 	"github.com/andygeiss/go-agent/internal/domain/agent/entities"
@@ -38,9 +39,10 @@ func main() {
 	fmt.Println()
 
 	// Create the agent infrastructure
+	dispatcher := messaging.NewExternalDispatcher()
 	llmClient := outbound.NewOpenAIClient(*baseURL, *model)
 	toolExecutor := outbound.NewToolExecutor()
-	publisher := outbound.NewEventPublisher()
+	publisher := outbound.NewEventPublisher(dispatcher)
 	taskService := services.NewTaskService(llmClient, toolExecutor, publisher)
 
 	// Create the agent

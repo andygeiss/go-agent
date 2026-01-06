@@ -2,20 +2,42 @@ package outbound
 
 import (
 	"context"
+	"encoding/json"
 
+	"github.com/andygeiss/cloud-native-utils/messaging"
 	"github.com/andygeiss/go-agent/pkg/event"
 )
 
-// EventPublisher is a no-op implementation of the event.EventPublisher interface.
-// It is used for demo purposes when event publishing is not needed.
-type EventPublisher struct{}
+// This file contains the implementation of the EventPublisher.
+// It is defined in the domain/indexing package as an outbound port.
+// It uses a messaging dispatcher from the cloud-native-utils package.
 
-// NewEventPublisher creates a new NoopPublisher instance.
-func NewEventPublisher() *EventPublisher {
-	return &EventPublisher{}
+// EventPublisher represents an event publisher.
+type EventPublisher struct {
+	dispatcher messaging.Dispatcher
 }
 
-// Publish does nothing and returns nil.
-func (p *EventPublisher) Publish(_ context.Context, _ event.Event) error {
+// NewEventPublisher creates a new event publisher.
+func NewEventPublisher(dispatcher messaging.Dispatcher) *EventPublisher {
+	return &EventPublisher{
+		dispatcher: dispatcher,
+	}
+}
+
+// Publish publishes an event.
+func (ep *EventPublisher) Publish(ctx context.Context, e event.Event) error {
+	// Encode the event to JSON.
+	encoded, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+
+	// Create a new message with the encoded event.
+	msg := messaging.NewMessage(e.Topic(), encoded)
+
+	// Publish the message or return an error if it fails.
+	if err := ep.dispatcher.Publish(ctx, msg); err != nil {
+		return err
+	}
 	return nil
 }
