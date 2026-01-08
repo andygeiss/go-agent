@@ -534,13 +534,13 @@ Performance benchmarks for core operations:
 
 | Benchmark | Time/op | Allocs/op |
 |-----------|---------|-----------|
-| `DirectCompletion` | ~500ns | 11 |
-| `SingleToolCall` | ~727ns | 17 |
-| `MultipleToolCalls_Sequential` | ~925ns | 20 |
-| `MultipleToolCalls_Parallel` | ~8.7µs | 44 |
-| `Message_Create` | ~2ns | 0 |
 | `Agent_Create` | ~45ns | 2 |
+| `DirectCompletion` | ~500ns | 11 |
 | `Event_Create` | ~1.6ns | 0 |
+| `Message_Create` | ~2ns | 0 |
+| `MultipleToolCalls_Parallel` | ~8.7µs | 44 |
+| `MultipleToolCalls_Sequential` | ~925ns | 20 |
+| `SingleToolCall` | ~727ns | 17 |
 
 *Measured on Apple M4 Pro. Parallel execution shows higher overhead in synthetic benchmarks but provides real benefits with I/O-bound tool operations.*
 
