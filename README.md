@@ -89,7 +89,8 @@ Goodbye! 👋
 go-agent/
 ├── cmd/cli/                    # CLI application entry point
 ├── internal/
-│   └── adapters/outbound/      # Infrastructure adapters (LLM, tools, events)
+│   ├── adapters/outbound/      # Infrastructure adapters (LLM, tools, events)
+│   └── domain/chat/            # Chat domain use cases
 ├── pkg/
 │   ├── agent/                  # Reusable agent library
 │   │   ├── types.go            # ID types, Role, Status constants
@@ -97,12 +98,13 @@ go-agent/
 │   │   ├── errors.go           # Typed errors (LLMError, ToolError, TaskError)
 │   │   ├── hooks.go            # Lifecycle hooks/middleware
 │   │   ├── task.go             # Task entity with timestamps
+│   │   ├── task_service.go     # Agent loop orchestration
 │   │   ├── message.go          # Conversation messages
+│   │   ├── llm_response.go     # LLM response wrapper
 │   │   ├── result.go           # Task result with metrics
 │   │   ├── tool_call.go        # Tool call entity
 │   │   ├── tool_definition.go  # Tool definitions with parameter types
 │   │   ├── ports.go            # Interfaces (LLMClient, ToolExecutor)
-│   │   ├── task_service.go     # Agent loop orchestration
 │   │   └── events/             # Domain events
 │   ├── event/                  # Event interfaces
 │   └── openai/                 # OpenAI API structures
@@ -329,6 +331,12 @@ just down
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Related Documentation
+
+- [CONTEXT.md](CONTEXT.md) — Architecture, conventions, and project contracts
+- [VENDOR.md](VENDOR.md) — Approved vendor libraries and usage patterns
+- [AGENTS.md](AGENTS.md) — AI agent definitions for this repository
 
 ## Acknowledgments
 
