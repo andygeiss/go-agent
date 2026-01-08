@@ -102,22 +102,18 @@ go-agent/
 ├── cmd/cli/                    # CLI application entry point
 ├── internal/
 │   ├── adapters/outbound/      # Infrastructure adapters (LLM, tools, events)
-│   └── domain/chat/            # Chat domain use cases
+│   └── domain/
+│       ├── chatting/           # Chatting domain (use cases)
+│       └── tooling/            # Tooling domain (Calculate, GetCurrentTime)
 ├── pkg/
 │   ├── agent/                  # Reusable agent library
-│   │   ├── agent.go            # Agent aggregate with options
+│   │   ├── aggregate.go        # Agent aggregate with options
+│   │   ├── entities.go         # LLMResponse, Message, Task, ToolCall, ToolDefinition
 │   │   ├── errors.go           # Typed errors (LLMError, ToolError, TaskError)
-│   │   ├── events/             # Domain events
-│   │   ├── hooks.go            # Lifecycle hooks/middleware
-│   │   ├── llm_response.go     # LLM response wrapper
-│   │   ├── message.go          # Conversation messages
-│   │   ├── ports.go            # Interfaces (LLMClient, ToolExecutor)
-│   │   ├── result.go           # Task result with metrics
-│   │   ├── task.go             # Task entity with timestamps
-│   │   ├── task_service.go     # Agent loop orchestration
-│   │   ├── tool_call.go        # Tool call entity
-│   │   ├── tool_definition.go  # Tool definitions with parameter types
-│   │   └── types.go            # ID types, Role, Status constants
+│   │   ├── events.go           # Domain events
+│   │   ├── ports_outbound.go   # Interfaces (LLMClient, ToolExecutor)
+│   │   ├── service.go          # Hooks, TaskService (agent loop orchestration)
+│   │   └── value_objects.go    # ID types, Result, Role/Status constants
 │   ├── event/                  # Event interfaces
 │   └── openai/                 # OpenAI API structures
 ```

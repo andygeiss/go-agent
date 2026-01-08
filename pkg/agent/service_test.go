@@ -61,6 +61,10 @@ func (m *mockToolExecutor) HasTool(_ string) bool {
 	return true
 }
 
+func (m *mockToolExecutor) RegisterTool(_ string, _ agent.ToolFunc) {}
+
+func (m *mockToolExecutor) RegisterToolDefinition(_ agent.ToolDefinition) {}
+
 // mockEventPublisher implements agent.EventPublisher for testing.
 type mockEventPublisher struct {
 	events []event.Event

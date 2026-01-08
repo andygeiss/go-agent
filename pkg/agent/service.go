@@ -7,8 +7,79 @@ import (
 
 	"github.com/andygeiss/cloud-native-utils/efficiency"
 	"github.com/andygeiss/cloud-native-utils/service"
-	"github.com/andygeiss/go-agent/pkg/agent/events"
 )
+
+// Hook represents a function that can be called at specific points during task execution.
+// Hooks can inspect or modify the context, returning an error to abort execution.
+type Hook func(ctx context.Context, agent *Agent, task *Task) error
+
+// Hooks contains callback functions for various points in the task lifecycle.
+type Hooks struct {
+	// AfterLLMCall is called after each LLM response is received.
+	// Can be used for logging, caching, or response inspection.
+	AfterLLMCall Hook
+
+	// AfterTask is called after a task completes (success or failure).
+	// Can be used for cleanup, metrics, or logging.
+	AfterTask Hook
+
+	// AfterToolCall is called after each tool execution completes.
+	// Can be used for logging, result caching, or result modification.
+	AfterToolCall func(ctx context.Context, agent *Agent, toolCall *ToolCall) error
+
+	// BeforeLLMCall is called before each LLM request.
+	// Can be used for rate limiting, logging, or request modification.
+	BeforeLLMCall Hook
+
+	// BeforeTask is called before a task starts executing.
+	// Can be used for logging, validation, or setup.
+	BeforeTask Hook
+
+	// BeforeToolCall is called before each tool execution.
+	// Can be used for authorization, logging, or argument validation.
+	BeforeToolCall func(ctx context.Context, agent *Agent, toolCall *ToolCall) error
+}
+
+// NewHooks creates an empty Hooks struct.
+func NewHooks() Hooks {
+	return Hooks{}
+}
+
+// WithAfterLLMCall sets the after LLM call hook.
+func (h Hooks) WithAfterLLMCall(hook Hook) Hooks {
+	h.AfterLLMCall = hook
+	return h
+}
+
+// WithAfterTask sets the after task hook.
+func (h Hooks) WithAfterTask(hook Hook) Hooks {
+	h.AfterTask = hook
+	return h
+}
+
+// WithAfterToolCall sets the after tool call hook.
+func (h Hooks) WithAfterToolCall(hook func(ctx context.Context, agent *Agent, toolCall *ToolCall) error) Hooks {
+	h.AfterToolCall = hook
+	return h
+}
+
+// WithBeforeLLMCall sets the before LLM call hook.
+func (h Hooks) WithBeforeLLMCall(hook Hook) Hooks {
+	h.BeforeLLMCall = hook
+	return h
+}
+
+// WithBeforeTask sets the before task hook.
+func (h Hooks) WithBeforeTask(hook Hook) Hooks {
+	h.BeforeTask = hook
+	return h
+}
+
+// WithBeforeToolCall sets the before tool call hook.
+func (h Hooks) WithBeforeToolCall(hook func(ctx context.Context, agent *Agent, toolCall *ToolCall) error) Hooks {
+	h.BeforeToolCall = hook
+	return h
+}
 
 // TaskService orchestrates the agent loop for task execution.
 // It coordinates between the LLM, tools, and event publishing.
@@ -42,7 +113,7 @@ func (s *TaskService) RunTask(ctx context.Context, agent *Agent, task *Task) (Re
 		return s.failTask(ctx, task, err.Error(), state)
 	}
 
-	_ = s.eventPublisher.Publish(ctx, events.NewEventTaskStarted(string(task.ID), task.Name))
+	_ = s.eventPublisher.Publish(ctx, NewEventTaskStarted(string(task.ID), task.Name))
 	agent.AddMessage(NewMessage(RoleUser, task.Input))
 
 	return s.runAgentLoop(ctx, agent, task, state)
@@ -129,7 +200,7 @@ func (s *TaskService) collectAndPublishResults(
 		}
 
 		// Publish tool call executed event
-		_ = s.eventPublisher.Publish(ctx, events.NewEventToolCallExecuted(
+		_ = s.eventPublisher.Publish(ctx, NewEventToolCallExecuted(
 			string(tc.ID),
 			tc.Name,
 			tc.Result,
@@ -151,7 +222,7 @@ func (s *TaskService) completeTask(ctx context.Context, agent *Agent, task *Task
 		_ = s.hooks.AfterTask(ctx, agent, task)
 	}
 
-	_ = s.eventPublisher.Publish(ctx, events.NewEventTaskCompleted(string(task.ID), task.Output))
+	_ = s.eventPublisher.Publish(ctx, NewEventTaskCompleted(string(task.ID), task.Output))
 
 	return NewResult(task.ID, true, task.Output).
 		WithDuration(time.Since(state.startTime)).
@@ -267,7 +338,7 @@ func (s *TaskService) executeToolCallsSequential(ctx context.Context, agent *Age
 		}
 
 		// Publish tool call executed event
-		_ = s.eventPublisher.Publish(ctx, events.NewEventToolCallExecuted(
+		_ = s.eventPublisher.Publish(ctx, NewEventToolCallExecuted(
 			string(tc.ID),
 			tc.Name,
 			tc.Result,
@@ -295,7 +366,7 @@ func (s *TaskService) failTask(
 	}
 
 	// Publish task failed event
-	_ = s.eventPublisher.Publish(ctx, events.NewEventTaskFailed(string(task.ID), errMsg))
+	_ = s.eventPublisher.Publish(ctx, NewEventTaskFailed(string(task.ID), errMsg))
 
 	return NewResult(task.ID, false, "").
 		WithError(errMsg).

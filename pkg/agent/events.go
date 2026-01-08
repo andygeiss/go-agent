@@ -1,6 +1,4 @@
-// Package events provides domain events for the agent framework.
-// Events are published during task and tool call lifecycle transitions.
-package events
+package agent
 
 // Event topic constants for messaging.
 const (

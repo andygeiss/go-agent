@@ -7,6 +7,8 @@ import (
 	"github.com/andygeiss/go-agent/pkg/agent"
 )
 
+// Result tests
+
 func Test_Result_NewResult_With_Success_Should_ReturnSuccessResult(t *testing.T) {
 	// Arrange
 	taskID := agent.TaskID("task-1")

@@ -101,52 +101,51 @@ go-agent/
 ├── internal/
 │   ├── adapters/
 │   │   └── outbound/           # Infrastructure adapters
-│   │       ├── openai_client.go              # LLMClient implementation
-│   │       ├── tool_executor.go              # ToolExecutor implementation
-│   │       ├── event_publisher.go            # EventPublisher implementation
 │   │       ├── conversation_store.go         # ConversationStore implementation
-│   │       └── encrypted_conversation_store.go # Encrypted storage wrapper
+│   │       ├── encrypted_conversation_store.go # Encrypted storage wrapper
+│   │       ├── event_publisher.go            # EventPublisher implementation
+│   │       ├── openai_client.go              # LLMClient implementation
+│   │       └── tool_executor.go              # ToolExecutor implementation
 │   └── domain/
-│       └── chat/               # Chat domain use cases
-│           ├── ports.go              # Domain-specific ports
-│           ├── send_message.go       # SendMessageUseCase
-│           ├── clear_conversation.go # ClearConversationUseCase
-│           └── get_agent_stats.go    # GetAgentStatsUseCase
+│       ├── chatting/           # Chatting domain
+│       │   ├── service.go            # Use cases (SendMessage, ClearConversation, GetAgentStats)
+│       │   ├── service_test.go       # Use case tests
+│       │   └── value_objects.go      # Domain-specific types
+│       └── tooling/            # Tooling domain
+│           ├── aggregate.go          # Tool aggregate
+│           ├── aggregate_test.go     # Tool aggregate tests
+│           ├── entities.go           # Tool definitions
+│           ├── service.go            # Tool implementations (Calculate, GetCurrentTime)
+│           ├── service_test.go       # Tool tests
+│           └── value_objects.go      # Tool-specific types
 ├── pkg/
 │   ├── agent/                  # Reusable agent library (import this)
-│   │   ├── types.go            # ID types, Role, Status constants
-│   │   ├── agent.go            # Agent aggregate root
-│   │   ├── task.go             # Task entity
-│   │   ├── task_service.go     # Agent loop orchestration
-│   │   ├── message.go          # Conversation messages
-│   │   ├── tool_call.go        # Tool call entity
-│   │   ├── tool_definition.go  # Tool definitions with typed parameters
-│   │   ├── llm_response.go     # LLM response wrapper
-│   │   ├── result.go           # Task execution result with metrics
-│   │   ├── errors.go           # Typed errors (LLMError, ToolError, TaskError)
-│   │   ├── hooks.go            # Lifecycle hooks/middleware
-│   │   ├── ports.go            # LLMClient, ToolExecutor, EventPublisher, ConversationStore interfaces
+│   │   ├── aggregate.go        # Agent aggregate root
 │   │   ├── benchmark_test.go   # Performance benchmarks
-│   │   └── events/             # Domain events
-│   │       └── events.go       # TaskStarted, TaskCompleted, ToolCallExecuted
+│   │   ├── entities.go         # LLMResponse, Message, Task, ToolCall, ToolDefinition
+│   │   ├── errors.go           # Typed errors (LLMError, ToolError, TaskError)
+│   │   ├── events.go           # Domain events (TaskStarted, TaskCompleted, ToolCallExecuted)
+│   │   ├── ports_outbound.go   # LLMClient, ToolExecutor, EventPublisher, ConversationStore interfaces
+│   │   ├── service.go          # Hooks, TaskService (agent loop orchestration)
+│   │   └── value_objects.go    # ID types, Result, TokenUsage, Role/Status constants
 │   ├── event/                  # Event infrastructure interfaces
 │   │   ├── event.go            # Event interface (Topic())
-│   │   ├── event_publisher.go  # Publisher interface
-│   │   ├── event_subscriber.go # Subscriber interface
+│   │   ├── event_factory.go    # Factory function type
 │   │   ├── event_handler.go    # Handler function type
-│   │   └── event_factory.go    # Factory function type
+│   │   ├── event_publisher.go  # Publisher interface
+│   │   └── event_subscriber.go # Subscriber interface
 │   └── openai/                 # OpenAI API data structures
-│       ├── message.go          # Chat message format
 │       ├── chat_completion_*.go # Request/response types
+│       ├── message.go          # Chat message format
 │       ├── tool.go             # Tool definition format
 │       └── tool_call.go        # Tool call format
+├── AGENTS.md                   # AI agent definitions index
 ├── CONTEXT.md                  # This file
+├── Dockerfile                  # Multi-stage container build
 ├── README.md                   # User documentation
 ├── VENDOR.md                   # Vendor library documentation
-├── AGENTS.md                   # AI agent definitions index
-├── go.mod                      # Go module definition
-├── Dockerfile                  # Multi-stage container build
-└── docker-compose.yml          # Local development services
+├── docker-compose.yml          # Local development services
+└── go.mod                      # Go module definition
 ```
 
 ### Rules for New Code
@@ -156,7 +155,7 @@ go-agent/
 | New domain use cases | `internal/domain/<domain>/` |
 | New infrastructure adapters | `internal/adapters/outbound/` |
 | Core agent library extensions | `pkg/agent/` |
-| New domain events | `pkg/agent/events/` |
+| New domain events | `pkg/agent/events.go` |
 | OpenAI API structures | `pkg/openai/` |
 | Event infrastructure | `pkg/event/` |
 | Tests | Same directory as source, `*_test.go` |
@@ -181,7 +180,7 @@ go-agent/
 |---------|------------|---------|
 | Files | `snake_case.go` | `task_service.go` |
 | Test files | `<name>_test.go` | `task_service_test.go` |
-| Packages | Single lowercase word | `agent`, `chat`, `outbound` |
+| Packages | Single lowercase word | `agent`, `chatting`, `outbound` |
 | Types/Structs | `PascalCase` | `TaskService`, `LLMResponse` |
 | Interfaces | `PascalCase`, noun or `-er` suffix | `LLMClient`, `ToolExecutor` |
 | Constructors | `New<Type>` | `NewAgent()`, `NewTaskService()` |
@@ -266,7 +265,7 @@ The core abstraction is the **Observe → Decide → Act → Update** loop in `T
 
 ### Ports (Interfaces)
 
-Located in `pkg/agent/ports.go`:
+Located in `pkg/agent/ports_outbound.go`:
 
 | Port | Responsibility | Adapter |
 |------|----------------|---------|
@@ -277,7 +276,7 @@ Located in `pkg/agent/ports.go`:
 
 ### Hooks/Middleware
 
-Located in `pkg/agent/hooks.go`. Available hooks:
+Located in `pkg/agent/service.go`. Available hooks:
 
 | Hook | When Called | Use Case |
 |------|-------------|----------|
@@ -290,7 +289,7 @@ Located in `pkg/agent/hooks.go`. Available hooks:
 
 ### Domain Events
 
-Located in `pkg/agent/events/`:
+Located in `pkg/agent/events.go`:
 
 | Event | Topic | When Emitted |
 |-------|-------|--------------|

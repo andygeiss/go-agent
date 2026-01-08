@@ -1,26 +1,26 @@
-package events_test
+package agent_test
 
 import (
 	"testing"
 
 	"github.com/andygeiss/cloud-native-utils/assert"
-	"github.com/andygeiss/go-agent/pkg/agent/events"
+	"github.com/andygeiss/go-agent/pkg/agent"
 )
 
 func Test_EventTaskStarted_Topic_Should_ReturnCorrectTopic(t *testing.T) {
 	// Arrange
-	event := events.NewEventTaskStarted("task-1", "Test Task")
+	event := agent.NewEventTaskStarted("task-1", "Test Task")
 
 	// Act
 	topic := event.Topic()
 
 	// Assert
-	assert.That(t, "topic must match", topic, events.TopicTaskStarted)
+	assert.That(t, "topic must match", topic, agent.TopicTaskStarted)
 }
 
 func Test_EventTaskStarted_Fields_Should_MatchInputs(t *testing.T) {
 	// Arrange & Act
-	event := events.NewEventTaskStarted("task-1", "Test Task")
+	event := agent.NewEventTaskStarted("task-1", "Test Task")
 
 	// Assert
 	assert.That(t, "task ID must match", event.TaskID, "task-1")
@@ -29,18 +29,18 @@ func Test_EventTaskStarted_Fields_Should_MatchInputs(t *testing.T) {
 
 func Test_EventTaskCompleted_Topic_Should_ReturnCorrectTopic(t *testing.T) {
 	// Arrange
-	event := events.NewEventTaskCompleted("task-1", "output")
+	event := agent.NewEventTaskCompleted("task-1", "output")
 
 	// Act
 	topic := event.Topic()
 
 	// Assert
-	assert.That(t, "topic must match", topic, events.TopicTaskCompleted)
+	assert.That(t, "topic must match", topic, agent.TopicTaskCompleted)
 }
 
 func Test_EventTaskCompleted_Fields_Should_MatchInputs(t *testing.T) {
 	// Arrange & Act
-	event := events.NewEventTaskCompleted("task-1", "output")
+	event := agent.NewEventTaskCompleted("task-1", "output")
 
 	// Assert
 	assert.That(t, "task ID must match", event.TaskID, "task-1")
@@ -49,18 +49,18 @@ func Test_EventTaskCompleted_Fields_Should_MatchInputs(t *testing.T) {
 
 func Test_EventTaskFailed_Topic_Should_ReturnCorrectTopic(t *testing.T) {
 	// Arrange
-	event := events.NewEventTaskFailed("task-1", "error message")
+	event := agent.NewEventTaskFailed("task-1", "error message")
 
 	// Act
 	topic := event.Topic()
 
 	// Assert
-	assert.That(t, "topic must match", topic, events.TopicTaskFailed)
+	assert.That(t, "topic must match", topic, agent.TopicTaskFailed)
 }
 
 func Test_EventTaskFailed_Fields_Should_MatchInputs(t *testing.T) {
 	// Arrange & Act
-	event := events.NewEventTaskFailed("task-1", "error message")
+	event := agent.NewEventTaskFailed("task-1", "error message")
 
 	// Assert
 	assert.That(t, "task ID must match", event.TaskID, "task-1")
@@ -69,18 +69,18 @@ func Test_EventTaskFailed_Fields_Should_MatchInputs(t *testing.T) {
 
 func Test_EventToolCallExecuted_Topic_Should_ReturnCorrectTopic(t *testing.T) {
 	// Arrange
-	event := events.NewEventToolCallExecuted("tc-1", "search", "result", "")
+	event := agent.NewEventToolCallExecuted("tc-1", "search", "result", "")
 
 	// Act
 	topic := event.Topic()
 
 	// Assert
-	assert.That(t, "topic must match", topic, events.TopicToolCallExecuted)
+	assert.That(t, "topic must match", topic, agent.TopicToolCallExecuted)
 }
 
 func Test_EventToolCallExecuted_Fields_Should_MatchInputs(t *testing.T) {
 	// Arrange & Act
-	event := events.NewEventToolCallExecuted("tc-1", "search", "result", "error")
+	event := agent.NewEventToolCallExecuted("tc-1", "search", "result", "error")
 
 	// Assert
 	assert.That(t, "tool call ID must match", event.ToolCallID, "tc-1")

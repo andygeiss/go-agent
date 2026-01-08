@@ -10,7 +10,8 @@ import (
 
 	"github.com/andygeiss/cloud-native-utils/messaging"
 	"github.com/andygeiss/go-agent/internal/adapters/outbound"
-	"github.com/andygeiss/go-agent/internal/domain/chat"
+	"github.com/andygeiss/go-agent/internal/domain/chatting"
+	"github.com/andygeiss/go-agent/internal/domain/tooling"
 	"github.com/andygeiss/go-agent/pkg/agent"
 )
 
@@ -46,6 +47,15 @@ func main() {
 	toolExecutor := outbound.NewToolExecutor()
 	publisher := outbound.NewEventPublisher(dispatcher)
 
+	// Register tools
+	calculateTool := tooling.NewCalculateTool()
+	toolExecutor.RegisterTool("calculate", calculateTool.Func)
+	toolExecutor.RegisterToolDefinition(calculateTool.Definition)
+
+	getCurrentTimeTool := tooling.NewGetCurrentTimeTool()
+	toolExecutor.RegisterTool("get_current_time", getCurrentTimeTool.Func)
+	toolExecutor.RegisterToolDefinition(getCurrentTimeTool.Definition)
+
 	// Create hooks for logging (when verbose)
 	hooks := agent.NewHooks()
 	if *verbose {
@@ -71,9 +81,9 @@ func main() {
 
 	// Create use cases
 	uc := &useCases{
-		clearConversation: chat.NewClearConversationUseCase(&agentInstance),
-		getAgentStats:     chat.NewGetAgentStatsUseCase(&agentInstance),
-		sendMessage:       chat.NewSendMessageUseCase(taskService, &agentInstance),
+		clearConversation: chatting.NewClearConversationUseCase(&agentInstance),
+		getAgentStats:     chatting.NewGetAgentStatsUseCase(&agentInstance),
+		sendMessage:       chatting.NewSendMessageUseCase(taskService, &agentInstance),
 	}
 
 	runInteractiveChat(uc, *verbose)
@@ -81,9 +91,9 @@ func main() {
 
 // useCases holds the domain use cases for the CLI.
 type useCases struct {
-	clearConversation *chat.ClearConversationUseCase
-	getAgentStats     *chat.GetAgentStatsUseCase
-	sendMessage       *chat.SendMessageUseCase
+	clearConversation *chatting.ClearConversationUseCase
+	getAgentStats     *chatting.GetAgentStatsUseCase
+	sendMessage       *chatting.SendMessageUseCase
 }
 
 // handleCommand processes special commands. Returns true if a command was handled,
@@ -108,7 +118,7 @@ func handleCommand(input string, uc *useCases) (bool, bool) {
 }
 
 // printAgentStats displays the current agent statistics.
-func printAgentStats(uc *chat.GetAgentStatsUseCase) {
+func printAgentStats(uc *chatting.GetAgentStatsUseCase) {
 	stats := uc.Execute()
 	fmt.Println()
 	fmt.Println("📊 Agent Statistics")
@@ -126,7 +136,7 @@ func printAgentStats(uc *chat.GetAgentStatsUseCase) {
 }
 
 // printFinalStats shows a summary of the session upon exit.
-func printFinalStats(uc *chat.GetAgentStatsUseCase) {
+func printFinalStats(uc *chatting.GetAgentStatsUseCase) {
 	stats := uc.Execute()
 	if stats.TaskCount > 0 {
 		fmt.Println()
@@ -136,7 +146,7 @@ func printFinalStats(uc *chat.GetAgentStatsUseCase) {
 }
 
 // printResult displays the result of a sent message.
-func printResult(output chat.SendMessageOutput, verbose bool) {
+func printResult(output chatting.SendMessageOutput, verbose bool) {
 	if output.Success {
 		fmt.Printf("🤖 Assistant: %s\n", output.Response)
 		if verbose {
@@ -175,7 +185,7 @@ func runInteractiveChat(uc *useCases, verbose bool) {
 
 		// Send message using use case
 		ctx := context.Background()
-		output, err := uc.sendMessage.Execute(ctx, chat.SendMessageInput{Message: input})
+		output, err := uc.sendMessage.Execute(ctx, chatting.SendMessageInput{Message: input})
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n\n", err)
 			continue

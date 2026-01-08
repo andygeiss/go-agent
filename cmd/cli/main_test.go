@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/andygeiss/go-agent/internal/domain/chat"
+	"github.com/andygeiss/go-agent/internal/domain/chatting"
 	"github.com/andygeiss/go-agent/pkg/agent"
 	"github.com/andygeiss/go-agent/pkg/event"
 )
@@ -43,6 +43,10 @@ func (m *mockToolExecutor) HasTool(name string) bool {
 	return name == "mock_tool"
 }
 
+func (m *mockToolExecutor) RegisterTool(_ string, _ agent.ToolFunc) {}
+
+func (m *mockToolExecutor) RegisterToolDefinition(_ agent.ToolDefinition) {}
+
 // mockEventPublisher implements agent.EventPublisher for benchmarking.
 type mockEventPublisher struct{}
 
@@ -67,9 +71,9 @@ func Benchmark_SendMessageUseCase_Execute(b *testing.B) {
 	)
 
 	// Create use case
-	useCase := chat.NewSendMessageUseCase(taskService, &ag)
+	useCase := chatting.NewSendMessageUseCase(taskService, &ag)
 	ctx := context.Background()
-	input := chat.SendMessageInput{Message: "Benchmark message"}
+	input := chatting.SendMessageInput{Message: "Benchmark message"}
 
 	b.ResetTimer()
 	for b.Loop() {

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/andygeiss/go-agent/pkg/agent"
-	"github.com/andygeiss/go-agent/pkg/agent/events"
 )
 
 func Benchmark_TaskService_DirectCompletion(b *testing.B) {
@@ -142,6 +141,6 @@ func Benchmark_Agent_Create(b *testing.B) {
 
 func Benchmark_Event_Create(b *testing.B) {
 	for b.Loop() {
-		_ = events.NewEventTaskStarted("task-1", "TaskName")
+		_ = agent.NewEventTaskStarted("task-1", "TaskName")
 	}
 }
