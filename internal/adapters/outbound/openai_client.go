@@ -143,19 +143,22 @@ func (c *OpenAIClient) convertToAPITools(tools []agent.ToolDefinition) []openai.
 	apiTools := make([]openai.Tool, len(tools))
 	for i, tool := range tools {
 		properties := make(map[string]openai.PropertyDefinition)
-		for paramName, paramDesc := range tool.Parameters {
-			properties[paramName] = openai.PropertyDefinition{
-				Type:        "string",
-				Description: paramDesc,
-			}
-		}
-		// Build required fields (all parameters are required by default, except "limit")
 		required := make([]string, 0, len(tool.Parameters))
-		for paramName := range tool.Parameters {
-			if paramName != "limit" {
-				required = append(required, paramName)
+
+		for _, param := range tool.Parameters {
+			prop := openai.PropertyDefinition{
+				Type:        string(param.Type),
+				Description: param.Description,
+			}
+			if len(param.Enum) > 0 {
+				prop.Enum = param.Enum
+			}
+			properties[param.Name] = prop
+			if param.Required {
+				required = append(required, param.Name)
 			}
 		}
+
 		apiTools[i] = openai.Tool{
 			Type: "function",
 			Function: openai.FunctionDefinition{

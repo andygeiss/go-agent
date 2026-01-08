@@ -30,5 +30,6 @@ func Test_ToolDefinition_WithParameter_With_Params_Should_HaveParameters(t *test
 
 	// Assert
 	assert.That(t, "tool definition must have one parameter", len(td.Parameters), 1)
-	assert.That(t, "parameter description must match", td.Parameters["query"], "The search query")
+	assert.That(t, "parameter name must match", td.Parameters[0].Name, "query")
+	assert.That(t, "parameter description must match", td.Parameters[0].Description, "The search query")
 }

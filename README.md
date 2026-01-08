@@ -17,8 +17,12 @@ A Go-based AI Agent library implementing the **Observe → Decide → Act → Up
 
 - **Reusable Library** - Import `pkg/agent` to build LLM-powered applications
 - **LLM Integration** - OpenAI-compatible API support (works with LM Studio, OpenAI, etc.)
-- **Tool Calling** - Extensible tool system for agent capabilities
+- **Tool Calling** - Extensible tool system with typed parameter definitions
 - **Event-Driven** - Domain events for observability and extensibility
+- **Hooks/Middleware** - Lifecycle callbacks for logging, metrics, authorization
+- **Functional Options** - Clean configuration with `With*` option functions
+- **Typed Errors** - Structured error handling with `errors.Is`/`errors.As` support
+- **Memory Management** - Configurable message limits to prevent context overflow
 
 ## Quick Start
 
@@ -57,13 +61,25 @@ This starts an interactive CLI where you can chat with the agent:
 ==================================
 Connecting to LM Studio at: http://localhost:1234
 Using model: default
+Max iterations: 10 | Max messages: 50
 
-Type your message and press Enter. Type 'quit' or 'exit' to stop.
+Commands: 'quit'/'exit' to stop, 'clear' to reset, 'stats' for agent stats
 
 You: What time is it?
-🤖 Assistant: The current time is 2026-01-06T15:30:45Z.
+🤖 Assistant: The current time is 2026-01-08T15:30:45Z.
+
+You: stats
+📊 Agent Statistics
+-------------------
+Agent ID:        demo-agent
+Messages:        2
+Tasks:           1 (✓ 1 completed, ✗ 0 failed)
+Max iterations:  10
+Max messages:    50
 
 You: quit
+
+📈 Session summary: 1 tasks (✓ 1, ✗ 0), 2 messages
 Goodbye! 👋
 ```
 
@@ -77,10 +93,14 @@ go-agent/
 ├── pkg/
 │   ├── agent/                  # Reusable agent library
 │   │   ├── types.go            # ID types, Role, Status constants
-│   │   ├── agent.go            # Agent aggregate
-│   │   ├── task.go             # Task entity
+│   │   ├── agent.go            # Agent aggregate with options
+│   │   ├── errors.go           # Typed errors (LLMError, ToolError, TaskError)
+│   │   ├── hooks.go            # Lifecycle hooks/middleware
+│   │   ├── task.go             # Task entity with timestamps
 │   │   ├── message.go          # Conversation messages
+│   │   ├── result.go           # Task result with metrics
 │   │   ├── tool_call.go        # Tool call entity
+│   │   ├── tool_definition.go  # Tool definitions with parameter types
 │   │   ├── ports.go            # Interfaces (LLMClient, ToolExecutor)
 │   │   ├── task_service.go     # Agent loop orchestration
 │   │   └── events/             # Domain events
@@ -113,11 +133,24 @@ LM_STUDIO_URL=http://localhost:1234
 LM_STUDIO_MODEL=your-model-name
 ```
 
-Command-line flags are also available:
+### CLI Options
 
 ```bash
-just run -- -url http://localhost:1234 -model your-model
+go run ./cmd/cli \
+    -url http://localhost:1234 \    # LM Studio API URL
+    -model <model-name> \           # Model to use
+    -max-iterations 10 \            # Max agent loop iterations per task
+    -max-messages 50 \              # Max messages to retain (0=unlimited)
+    -verbose                         # Show detailed metrics after each response
 ```
+
+### CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `quit` / `exit` | Exit with session summary |
+| `clear` | Clear conversation history |
+| `stats` | Show agent statistics |
 
 ## Architecture
 
@@ -149,11 +182,29 @@ import (
 
 // Create agent infrastructure
 taskService := agent.NewTaskService(llmClient, toolExecutor, publisher)
-ag := agent.NewAgent("my-agent", "You are a helpful assistant")
+
+// Optional: Add hooks for logging/metrics
+hooks := agent.NewHooks().
+    WithAfterToolCall(func(ctx context.Context, ag *agent.Agent, tc *agent.ToolCall) error {
+        log.Printf("Tool %s executed: %s", tc.Name, tc.Result)
+        return nil
+    })
+taskService.WithHooks(hooks)
+
+// Create agent with options
+ag := agent.NewAgent("my-agent", "You are a helpful assistant",
+    agent.WithMaxIterations(20),
+    agent.WithMaxMessages(100),
+    agent.WithMetadata(agent.Metadata{"version": "1.0"}),
+)
 
 // Run a task
 task := agent.NewTask("task-1", "chat", "Hello!")
 result, err := taskService.RunTask(ctx, &ag, task)
+
+// Access execution metrics
+fmt.Printf("Completed in %s with %d iterations, %d tool calls\n",
+    result.Duration, result.IterationCount, result.ToolCallCount)
 ```
 
 The agent operates in a continuous loop:
@@ -182,6 +233,63 @@ executor.RegisterTool("my_tool", func(ctx context.Context, args string) (string,
     // Parse args (JSON) and execute
     return "result", nil
 })
+```
+
+Define tool parameters with types:
+
+```go
+toolDef := agent.NewToolDefinition("my_tool", "Description of my tool").
+    WithParameterDef(agent.NewParameterDefinition("query", agent.ParamTypeString).
+        WithDescription("The search query").
+        WithRequired()).
+    WithParameterDef(agent.NewParameterDefinition("limit", agent.ParamTypeInteger).
+        WithDescription("Max results").
+        WithDefault("10"))
+```
+
+### Error Handling
+
+The library provides typed errors for robust error handling:
+
+```go
+result, err := taskService.RunTask(ctx, &ag, task)
+if err != nil {
+    // Check for specific error types
+    if errors.Is(err, agent.ErrMaxIterationsReached) {
+        log.Println("Task exceeded iteration limit")
+    }
+    
+    var toolErr *agent.ToolError
+    if errors.As(err, &toolErr) {
+        log.Printf("Tool %s failed: %s", toolErr.ToolName, toolErr.Message)
+    }
+}
+```
+
+### Hooks/Middleware
+
+Add cross-cutting concerns without modifying core logic:
+
+```go
+hooks := agent.NewHooks().
+    WithBeforeTask(func(ctx context.Context, ag *agent.Agent, task *agent.Task) error {
+        log.Printf("Starting task: %s", task.ID)
+        return nil
+    }).
+    WithAfterTask(func(ctx context.Context, ag *agent.Agent, task *agent.Task) error {
+        log.Printf("Task completed in %s", task.Duration())
+        return nil
+    }).
+    WithBeforeLLMCall(func(ctx context.Context, ag *agent.Agent, task *agent.Task) error {
+        // Rate limiting, logging, etc.
+        return nil
+    }).
+    WithAfterToolCall(func(ctx context.Context, ag *agent.Agent, tc *agent.ToolCall) error {
+        // Log tool execution, cache results, etc.
+        return nil
+    })
+
+taskService.WithHooks(hooks)
 ```
 
 ## Testing

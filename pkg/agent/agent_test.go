@@ -87,7 +87,7 @@ func Test_Agent_CanContinue_With_LowIteration_Should_ReturnTrue(t *testing.T) {
 func Test_Agent_CanContinue_With_MaxIteration_Should_ReturnFalse(t *testing.T) {
 	// Arrange
 	ag := agent.NewAgent("agent-1", "prompt")
-	ag.WithMaxIterations(2)
+	ag.SetMaxIterations(2)
 	ag.IncrementIteration()
 	ag.IncrementIteration()
 
@@ -160,15 +160,136 @@ func Test_Agent_ResetIteration_Should_ResetCounter(t *testing.T) {
 	assert.That(t, "agent iteration must be 0", ag.Iteration, 0)
 }
 
-func Test_Agent_WithMaxIterations_Should_SetLimit(t *testing.T) {
+func Test_Agent_SetMaxIterations_Should_SetLimit(t *testing.T) {
 	// Arrange
 	ag := agent.NewAgent("agent-1", "prompt")
 
 	// Act
-	ag.WithMaxIterations(5)
+	ag.SetMaxIterations(5)
 
 	// Assert
 	assert.That(t, "agent max iterations must be 5", ag.MaxIterations, 5)
+}
+
+func Test_Agent_WithMaxIterations_Option_Should_SetLimit(t *testing.T) {
+	// Arrange & Act
+	ag := agent.NewAgent("agent-1", "prompt", agent.WithMaxIterations(15))
+
+	// Assert
+	assert.That(t, "agent max iterations must be 15", ag.MaxIterations, 15)
+}
+
+func Test_Agent_WithMaxMessages_Option_Should_SetLimit(t *testing.T) {
+	// Arrange & Act
+	ag := agent.NewAgent("agent-1", "prompt", agent.WithMaxMessages(100))
+
+	// Assert
+	assert.That(t, "agent max messages must be 100", ag.MaxMessages, 100)
+}
+
+func Test_Agent_WithMetadata_Option_Should_SetMetadata(t *testing.T) {
+	// Arrange & Act
+	meta := agent.Metadata{"key": "value"}
+	ag := agent.NewAgent("agent-1", "prompt", agent.WithMetadata(meta))
+
+	// Assert
+	assert.That(t, "agent metadata must be set", ag.GetMetadata("key"), "value")
+}
+
+func Test_Agent_AddMessage_With_MaxMessages_Should_TrimOldMessages(t *testing.T) {
+	// Arrange
+	ag := agent.NewAgent("agent-1", "prompt", agent.WithMaxMessages(2))
+	ag.AddMessage(agent.NewMessage(agent.RoleUser, "first"))
+	ag.AddMessage(agent.NewMessage(agent.RoleAssistant, "second"))
+
+	// Act
+	ag.AddMessage(agent.NewMessage(agent.RoleUser, "third"))
+
+	// Assert
+	messages := ag.GetMessages()
+	assert.That(t, "agent must have 2 messages", len(messages), 2)
+	assert.That(t, "first message must be second", messages[0].Content, "second")
+	assert.That(t, "second message must be third", messages[1].Content, "third")
+}
+
+func Test_Agent_SetMetadata_Should_StoreValue(t *testing.T) {
+	// Arrange
+	ag := agent.NewAgent("agent-1", "prompt")
+
+	// Act
+	ag.SetMetadata("session_id", "abc123")
+
+	// Assert
+	assert.That(t, "metadata must be stored", ag.GetMetadata("session_id"), "abc123")
+}
+
+func Test_Agent_GetMetadata_With_MissingKey_Should_ReturnEmpty(t *testing.T) {
+	// Arrange
+	ag := agent.NewAgent("agent-1", "prompt")
+
+	// Act
+	value := ag.GetMetadata("nonexistent")
+
+	// Assert
+	assert.That(t, "missing key must return empty string", value, "")
+}
+
+func Test_Agent_MessageCount_Should_ReturnCount(t *testing.T) {
+	// Arrange
+	ag := agent.NewAgent("agent-1", "prompt")
+	ag.AddMessage(agent.NewMessage(agent.RoleUser, "hello"))
+	ag.AddMessage(agent.NewMessage(agent.RoleAssistant, "hi"))
+
+	// Act
+	count := ag.MessageCount()
+
+	// Assert
+	assert.That(t, "message count must be 2", count, 2)
+}
+
+func Test_Agent_TaskCount_Should_ReturnCount(t *testing.T) {
+	// Arrange
+	ag := agent.NewAgent("agent-1", "prompt")
+	ag.AddTask(agent.NewTask("task-1", "Task 1", "input"))
+	ag.AddTask(agent.NewTask("task-2", "Task 2", "input"))
+
+	// Act
+	count := ag.TaskCount()
+
+	// Assert
+	assert.That(t, "task count must be 2", count, 2)
+}
+
+func Test_Agent_CompletedTaskCount_Should_ReturnCompletedCount(t *testing.T) {
+	// Arrange
+	ag := agent.NewAgent("agent-1", "prompt")
+	task1 := agent.NewTask("task-1", "Task 1", "input")
+	task2 := agent.NewTask("task-2", "Task 2", "input")
+	task1.Complete("done")
+	ag.AddTask(task1)
+	ag.AddTask(task2)
+
+	// Act
+	count := ag.CompletedTaskCount()
+
+	// Assert
+	assert.That(t, "completed task count must be 1", count, 1)
+}
+
+func Test_Agent_FailedTaskCount_Should_ReturnFailedCount(t *testing.T) {
+	// Arrange
+	ag := agent.NewAgent("agent-1", "prompt")
+	task1 := agent.NewTask("task-1", "Task 1", "input")
+	task2 := agent.NewTask("task-2", "Task 2", "input")
+	task1.Fail("error")
+	ag.AddTask(task1)
+	ag.AddTask(task2)
+
+	// Act
+	count := ag.FailedTaskCount()
+
+	// Assert
+	assert.That(t, "failed task count must be 1", count, 1)
 }
 
 func Test_LLMResponse_NewLLMResponse_Should_CreateResponse(t *testing.T) {

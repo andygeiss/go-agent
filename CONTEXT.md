@@ -9,6 +9,8 @@ The project demonstrates:
 - Integration with OpenAI-compatible APIs (e.g., LM Studio)
 - Tool calling capabilities for LLM agents
 - Event-driven patterns for observability
+- Hooks/middleware system for extensibility
+- Typed errors for robust error handling
 
 ---
 
@@ -44,7 +46,8 @@ The project provides a **reusable agent library** in `pkg/agent/` with adapter i
 │  │  Agent, Task, Message, ToolCall, Result, LLMResponse     │   │
 │  │  TaskService, LLMClient, ToolExecutor, EventPublisher    │   │
 │  │  Types: AgentID, TaskID, ToolCallID, Role, Status        │   │
-│  │  ToolDefinition                                          │   │
+│  │  ToolDefinition, ParameterDefinition, ParameterType      │   │
+│  │  Hooks, Errors (typed), TokenUsage, Metadata             │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │                    pkg/agent/events                      │   │
@@ -74,6 +77,8 @@ The project provides a **reusable agent library** in `pkg/agent/` with adapter i
 - **Reusable Library**: Agent framework exported via `pkg/agent/`
 - **Agent Loop Pattern**: observe → decide → act → update
 - **Interface-based Design**: LLMClient, ToolExecutor, EventPublisher interfaces
+- **Functional Options**: Agent configuration via `With*` option functions
+- **Hooks/Middleware**: Lifecycle callbacks for extensibility
 
 ---
 
@@ -89,6 +94,7 @@ go-agent/
 │   └── adapters/
 │       └── outbound/           # Infrastructure adapters (LLM, tools, events)
 │           ├── openai_client.go
+│           ├── openai_client_test.go
 │           ├── tool_executor.go
 │           ├── tool_executor_test.go
 │           ├── event_publisher.go
@@ -96,13 +102,15 @@ go-agent/
 ├── pkg/
 │   ├── agent/                  # Reusable agent library
 │   │   ├── types.go            # ID types, Role, Status constants
-│   │   ├── agent.go            # Agent aggregate root
+│   │   ├── agent.go            # Agent aggregate root with options
+│   │   ├── errors.go           # Typed errors (LLMError, ToolError, TaskError)
+│   │   ├── hooks.go            # Lifecycle hooks/middleware
 │   │   ├── llm_response.go     # LLM response wrapper
 │   │   ├── message.go          # Conversation messages
-│   │   ├── task.go             # Task entity
+│   │   ├── task.go             # Task entity with timestamps
 │   │   ├── tool_call.go        # Tool call entity
-│   │   ├── result.go           # Task execution result
-│   │   ├── tool_definition.go  # Tool definition for LLM
+│   │   ├── result.go           # Task execution result with metrics
+│   │   ├── tool_definition.go  # Tool definition with parameter types
 │   │   ├── ports.go            # Interfaces (LLMClient, ToolExecutor, EventPublisher)
 │   │   ├── task_service.go     # Agent loop orchestration
 │   │   └── events/             # Domain events
@@ -140,7 +148,8 @@ go-agent/
 - Domain layer must not import adapter layer
 - Adapters implement port interfaces defined in domain
 - Use constructor functions (e.g., `NewAgent()`, `NewTask()`)
-- Use fluent/builder pattern with `With*` methods for optional configuration
+- Use functional options pattern with `With*` methods for configuration
+- Use builder pattern with method chaining for complex objects
 
 ### 5.2 Naming
 
@@ -151,24 +160,45 @@ go-agent/
 | **Packages** | lowercase, single word | `agent`, `events`, `openai` |
 | **Structs** | PascalCase | `Agent`, `TaskService`, `LLMResponse` |
 | **Interfaces** | PascalCase, verb or noun | `LLMClient`, `ToolExecutor`, `EventPublisher` |
-| **Constructors** | `New<Type>` | `NewAgent()`, `NewTask()` |
-| **Builder methods** | `With<Field>` | `WithMaxIterations()`, `WithParameter()` |
+| **Constructors** | `New<Type>` | `NewAgent()`, `NewTask()`, `NewHooks()` |
+| **Options** | `With<Field>` returning `Option` | `WithMaxIterations()`, `WithMetadata()` |
+| **Builder methods** | `With<Field>` returning self | `WithParameter()`, `WithDuration()` |
 | **ID types** | `<Entity>ID` | `AgentID`, `TaskID`, `ToolCallID` |
 | **Status types** | `<Entity>Status` | `TaskStatus`, `ToolCallStatus` |
 | **Event types** | `Event<Action>` | `EventTaskStarted`, `EventTaskCompleted` |
 | **Event topics** | `Topic<Action>` | `TopicTaskStarted` |
+| **Error types** | `<Context>Error` | `LLMError`, `ToolError`, `TaskError` |
 | **Constants** | PascalCase with prefix | `RoleSystem`, `TaskStatusPending` |
 
 ### 5.3 Error Handling & Logging
 
-- Return errors using `fmt.Errorf("context: %w", err)` for wrapping
-- Domain services return `(Result, error)` tuples
-- Use typed errors where meaningful
-- CLI uses `fmt.Printf` with emoji prefixes for user feedback:
-  - `🤖` Assistant messages
-  - `❌` Errors
-  - `⚠️` Warnings
-  - `🗑️` Actions
+**Sentinel Errors** (in `pkg/agent/errors.go`):
+- `ErrMaxIterationsReached` - Agent exceeded max iterations
+- `ErrContextCanceled` - Context was canceled
+- `ErrNoResponse` - LLM returned empty response
+- `ErrToolNotFound` - Unknown tool requested
+- `ErrInvalidArguments` - Malformed tool arguments
+
+**Typed Errors**:
+- `LLMError` - Wraps LLM client errors with context
+- `ToolError` - Wraps tool execution errors with tool name
+- `TaskError` - Wraps task errors with task ID
+
+All typed errors implement `Unwrap()` for `errors.Is`/`errors.As` support:
+```go
+if errors.Is(err, agent.ErrMaxIterationsReached) { ... }
+var toolErr *agent.ToolError
+if errors.As(err, &toolErr) { ... }
+```
+
+**CLI Feedback** (emoji prefixes):
+- `🤖` Assistant messages
+- `❌` Errors
+- `⚠️` Warnings
+- `🗑️` Actions
+- `📊` Statistics
+- `📈` Summary
+- `🔧` Tool calls
 
 ### 5.4 Testing
 
@@ -201,10 +231,36 @@ Key lint rules:
 - `interface{}` auto-replaced with `any`
 - Field alignment warnings for structs (optimize or add `//nolint:govet` with reason)
 - Use `slices.Contains()` instead of manual loops
+- Maximum cyclomatic complexity: 10 (cyclop linter)
+- No named returns (nonamedreturns linter)
 
 ---
 
 ## 6. Cross-Cutting Concerns and Reusable Patterns
+
+### Functional Options Pattern
+Used for configuring `Agent` instances:
+```go
+ag := agent.NewAgent("id", "prompt",
+    agent.WithMaxIterations(20),
+    agent.WithMaxMessages(100),
+    agent.WithMetadata(agent.Metadata{"key": "value"}),
+)
+```
+
+### Hooks/Middleware System
+Lifecycle callbacks for task execution extensibility:
+```go
+hooks := agent.NewHooks().
+    WithBeforeTask(func(ctx context.Context, ag *agent.Agent, task *agent.Task) error { ... }).
+    WithAfterTask(func(ctx context.Context, ag *agent.Agent, task *agent.Task) error { ... }).
+    WithBeforeLLMCall(func(ctx context.Context, ag *agent.Agent, task *agent.Task) error { ... }).
+    WithAfterLLMCall(func(ctx context.Context, ag *agent.Agent, task *agent.Task) error { ... }).
+    WithBeforeToolCall(func(ctx context.Context, ag *agent.Agent, tc *agent.ToolCall) error { ... }).
+    WithAfterToolCall(func(ctx context.Context, ag *agent.Agent, tc *agent.ToolCall) error { ... })
+
+taskService.WithHooks(hooks)
+```
 
 ### Event System
 - **Interface**: `pkg/event.Event` (must implement `Topic() string`)
@@ -216,12 +272,50 @@ Key lint rules:
 ### Tool System
 - **Interface**: `agent.ToolExecutor` in `pkg/agent/ports.go`
 - **Registration**: Tools registered via `RegisterTool(name, fn)` in adapters
-- **Definition**: `agent.ToolDefinition` with name, description, parameters
+- **Definition**: `agent.ToolDefinition` with typed parameters:
+```go
+td := agent.NewToolDefinition("calculate", "Perform calculation").
+    WithParameterDef(agent.NewParameterDefinition("expression", agent.ParamTypeString).
+        WithDescription("Math expression").
+        WithRequired())
+```
+
+### Parameter Types
+Supported parameter types for tool definitions:
+- `ParamTypeString`, `ParamTypeNumber`, `ParamTypeInteger`
+- `ParamTypeBoolean`, `ParamTypeArray`, `ParamTypeObject`
 
 ### LLM Integration
 - **Interface**: `agent.LLMClient` in `pkg/agent/ports.go`
 - **Implementation**: OpenAI-compatible API adapter in `adapters/outbound/`
 - **Configuration**: Base URL and model via environment/flags
+
+### Memory Management
+Agent supports message trimming to prevent context overflow:
+```go
+ag := agent.NewAgent("id", "prompt", agent.WithMaxMessages(100))
+// Older messages are automatically trimmed when limit exceeded
+```
+
+### Result Metrics
+Task results include execution metrics:
+```go
+result.Duration       // Execution time
+result.IterationCount // Agent loop iterations
+result.ToolCallCount  // Tool calls made
+result.Tokens         // TokenUsage{PromptTokens, CompletionTokens, TotalTokens}
+```
+
+### Task Timestamps
+Tasks track lifecycle timing:
+```go
+task.CreatedAt   // When task was created
+task.StartedAt   // When task started executing
+task.CompletedAt // When task completed/failed
+task.Duration()  // Execution duration
+task.WaitTime()  // Queue wait time
+task.Iterations  // Number of agent loop iterations
+```
 
 ### Configuration Management
 - **Environment**: `.env` file (local-only, copy from `.env.example`)
@@ -247,15 +341,36 @@ import (
 
 ### Create and Run Tasks
 ```go
+// Create service with dependencies
 taskService := agent.NewTaskService(llmClient, toolExecutor, publisher)
-ag := agent.NewAgent("my-agent", "You are a helpful assistant")
+
+// Optional: Add hooks for logging/metrics
+hooks := agent.NewHooks().
+    WithAfterToolCall(func(ctx context.Context, ag *agent.Agent, tc *agent.ToolCall) error {
+        log.Printf("Tool %s completed: %s", tc.Name, tc.Result)
+        return nil
+    })
+taskService.WithHooks(hooks)
+
+// Create agent with options
+ag := agent.NewAgent("my-agent", "You are a helpful assistant",
+    agent.WithMaxIterations(20),
+    agent.WithMaxMessages(100),
+    agent.WithMetadata(agent.Metadata{"version": "1.0"}),
+)
+
+// Run a task
 task := agent.NewTask("task-1", "chat", "Hello!")
 result, err := taskService.RunTask(ctx, &ag, task)
+
+// Access metrics
+fmt.Printf("Completed in %s with %d iterations\n", result.Duration, result.IterationCount)
 ```
 
 ### Customization Points
 - Add new tools by implementing `ToolExecutor`
 - Subscribe to events: `TaskStarted`, `TaskCompleted`, `TaskFailed`, `ToolCallExecuted`
+- Use hooks for: logging, metrics, rate limiting, authorization, caching
 - Extend agent capabilities by composing with your own types
 
 ---
@@ -274,6 +389,21 @@ result, err := taskService.RunTask(ctx, &ag, task)
 | `just up` | Start all services (build + docker-compose) |
 | `just down` | Stop all services |
 | `just profile` | Generate CPU profile and visualization |
+
+### CLI Options
+```bash
+go run ./cmd/cli \
+    -url http://localhost:1234 \    # LM Studio API URL
+    -model <model-name> \           # Model to use
+    -max-iterations 10 \            # Max agent loop iterations
+    -max-messages 50 \              # Max messages to retain (0=unlimited)
+    -verbose                         # Show detailed metrics
+```
+
+### CLI Commands
+- `quit` / `exit` - Exit the CLI with session summary
+- `clear` - Clear conversation history
+- `stats` - Show agent statistics (messages, tasks, completion rates)
 
 ### Environment Setup
 ```bash
@@ -299,6 +429,7 @@ cp .env.example .env
 - Struct field alignment optimized for memory (lint enforced)
 - Use `slices.Contains()` over manual loops
 - Profile-guided optimization (PGO) supported via `just profile`
+- Memory management via `MaxMessages` prevents unbounded growth
 
 ### Platform Assumptions
 - macOS/Linux development environment
@@ -309,6 +440,7 @@ cp .env.example .env
 - No inbound adapters (HTTP/gRPC) - CLI only
 - Single bounded context (`agent`)
 - Tool executor has limited demo tools (extensible)
+- Token usage tracking not yet implemented in OpenAI adapter
 
 ---
 
@@ -323,11 +455,15 @@ This file serves as the **authoritative project context** for:
 1. **Always read `CONTEXT.md` first** before major changes or refactors
 2. **Treat architectural boundaries as constraints** - domain must not import adapters
 3. **Follow naming conventions** exactly as documented
-4. **Add tests** following the established patterns
-5. **Update this file** if adding new architectural patterns or conventions
+4. **Use functional options** for Agent configuration
+5. **Use typed errors** for error handling (LLMError, ToolError, TaskError)
+6. **Add hooks** for cross-cutting concerns instead of modifying core logic
+7. **Add tests** following the established patterns
+8. **Update this file** if adding new architectural patterns or conventions
 
 ### Combining with Other Documents
 - `CONTEXT.md` - Architecture and conventions (this file)
-- `README.md` - User-facing documentation (if exists)
+- `README.md` - User-facing documentation
+- `VENDOR.md` - Vendor library documentation
 - `.golangci.yml` - Detailed lint rules
 - `.justfile` - Available commands and workflows

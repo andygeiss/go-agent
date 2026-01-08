@@ -151,7 +151,7 @@ func Test_TaskService_RunTask_With_MaxIterations_Should_Fail(t *testing.T) {
 	sut := agent.NewTaskService(mockLLM, mockExecutor, mockPublisher)
 
 	ag := agent.NewAgent("agent-1", "prompt")
-	ag.WithMaxIterations(3)
+	ag.SetMaxIterations(3)
 	task := agent.NewTask("task-1", "Infinite Loop", "loop")
 	ctx := context.Background()
 

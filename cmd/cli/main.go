@@ -25,14 +25,18 @@ func main() {
 	// Parse command line flags
 	baseURL := flag.String("url", "http://localhost:1234", "LM Studio API base URL")
 	model := flag.String("model", os.Getenv("LM_STUDIO_MODEL"), "Model name to use")
+	maxIterations := flag.Int("max-iterations", 10, "Maximum iterations per task")
+	maxMessages := flag.Int("max-messages", 50, "Maximum messages to retain (0 = unlimited)")
+	verbose := flag.Bool("verbose", false, "Show detailed metrics after each response")
 	flag.Parse()
 
 	fmt.Println("🤖 Go Agent Demo - LM Studio Chat")
 	fmt.Println("==================================")
 	fmt.Printf("Connecting to LM Studio at: %s\n", *baseURL)
 	fmt.Printf("Using model: %s\n", *model)
+	fmt.Printf("Max iterations: %d | Max messages: %d\n", *maxIterations, *maxMessages)
 	fmt.Println()
-	fmt.Println("Type your message and press Enter. Type 'quit' or 'exit' to stop.")
+	fmt.Println("Commands: 'quit'/'exit' to stop, 'clear' to reset, 'stats' for agent stats")
 	fmt.Println()
 
 	// Create the agent infrastructure
@@ -40,15 +44,55 @@ func main() {
 	llmClient := outbound.NewOpenAIClient(*baseURL, *model)
 	toolExecutor := outbound.NewToolExecutor()
 	publisher := outbound.NewEventPublisher(dispatcher)
-	taskService := agent.NewTaskService(llmClient, toolExecutor, publisher)
 
-	// Create the agent
-	agentInstance := agent.NewAgent("demo-agent", defaultSystemPrompt)
+	// Create hooks for logging (when verbose)
+	hooks := agent.NewHooks()
+	if *verbose {
+		hooks = hooks.WithAfterToolCall(func(_ context.Context, _ *agent.Agent, tc *agent.ToolCall) error {
+			fmt.Printf("  🔧 Tool: %s → %s\n", tc.Name, truncate(tc.Result, 50))
+			return nil
+		})
+	}
 
-	runInteractiveChat(taskService, &agentInstance)
+	taskService := agent.NewTaskService(llmClient, toolExecutor, publisher).WithHooks(hooks)
+
+	// Create the agent with options
+	agentInstance := agent.NewAgent(
+		"demo-agent",
+		defaultSystemPrompt,
+		agent.WithMaxIterations(*maxIterations),
+		agent.WithMaxMessages(*maxMessages),
+		agent.WithMetadata(agent.Metadata{
+			"created_by": "cli",
+			"model":      *model,
+		}),
+	)
+
+	runInteractiveChat(taskService, &agentInstance, *verbose)
 }
 
-func runInteractiveChat(taskService *agent.TaskService, ag *agent.Agent) {
+// handleCommand processes special commands. Returns true if a command was handled,
+// and a second bool indicating if the loop should break.
+func handleCommand(input string, ag *agent.Agent) (bool, bool) {
+	switch input {
+	case "quit", "exit":
+		printFinalStats(ag)
+		fmt.Println("Goodbye! 👋")
+		return true, true
+	case "clear":
+		ag.ClearMessages()
+		fmt.Println("🗑️  Conversation cleared.")
+		fmt.Println()
+		return true, false
+	case "stats":
+		printAgentStats(ag)
+		return true, false
+	default:
+		return false, false
+	}
+}
+
+func runInteractiveChat(taskService *agent.TaskService, ag *agent.Agent, verbose bool) {
 	scanner := bufio.NewScanner(os.Stdin)
 	taskCounter := 0
 
@@ -63,15 +107,10 @@ func runInteractiveChat(taskService *agent.TaskService, ag *agent.Agent) {
 			continue
 		}
 
-		if input == "quit" || input == "exit" {
-			fmt.Println("Goodbye! 👋")
-			break
-		}
-
-		if input == "clear" {
-			ag.ClearMessages()
-			fmt.Println("🗑️  Conversation cleared.")
-			fmt.Println()
+		if handled, shouldBreak := handleCommand(input, ag); handled {
+			if shouldBreak {
+				break
+			}
 			continue
 		}
 
@@ -87,15 +126,57 @@ func runInteractiveChat(taskService *agent.TaskService, ag *agent.Agent) {
 			continue
 		}
 
-		if result.Success {
-			fmt.Printf("🤖 Assistant: %s\n\n", result.Output)
-		} else {
-			fmt.Printf("⚠️  Task failed: %s\n\n", result.Error)
-		}
+		printResult(result, verbose)
 	}
 
 	if err := scanner.Err(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func printResult(result agent.Result, verbose bool) {
+	if result.Success {
+		fmt.Printf("🤖 Assistant: %s\n", result.Output)
+		if verbose {
+			fmt.Printf("   ⏱️  %s | 🔄 %d iterations | 🔧 %d tool calls\n",
+				result.Duration.Round(1000000), // Round to milliseconds
+				result.IterationCount,
+				result.ToolCallCount)
+		}
+		fmt.Println()
+	} else {
+		fmt.Printf("⚠️  Task failed: %s\n\n", result.Error)
+	}
+}
+
+func printAgentStats(ag *agent.Agent) {
+	fmt.Println()
+	fmt.Println("📊 Agent Statistics")
+	fmt.Println("-------------------")
+	fmt.Printf("Agent ID:        %s\n", ag.ID)
+	fmt.Printf("Messages:        %d\n", ag.MessageCount())
+	fmt.Printf("Tasks:           %d (✓ %d completed, ✗ %d failed)\n",
+		ag.TaskCount(), ag.CompletedTaskCount(), ag.FailedTaskCount())
+	fmt.Printf("Max iterations:  %d\n", ag.MaxIterations)
+	fmt.Printf("Max messages:    %d\n", ag.MaxMessages)
+	if model := ag.GetMetadata("model"); model != "" {
+		fmt.Printf("Model:           %s\n", model)
+	}
+	fmt.Println()
+}
+
+func printFinalStats(ag *agent.Agent) {
+	if ag.TaskCount() > 0 {
+		fmt.Println()
+		fmt.Printf("📈 Session summary: %d tasks (✓ %d, ✗ %d), %d messages\n",
+			ag.TaskCount(), ag.CompletedTaskCount(), ag.FailedTaskCount(), ag.MessageCount())
+	}
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
 }
