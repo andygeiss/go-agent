@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -33,11 +34,12 @@ const (
 // It wraps LLM calls with resilience patterns (timeout, retry, circuit breaker).
 type OpenAIClient struct {
 	httpClient    *http.Client
+	logger        *slog.Logger
 	baseURL       string
 	model         string
 	llmTimeout    time.Duration
-	retryAttempts int
 	retryDelay    time.Duration
+	retryAttempts int
 	breakerThresh int
 }
 
@@ -86,6 +88,13 @@ func (c *OpenAIClient) WithCircuitBreaker(threshold int) *OpenAIClient {
 	return c
 }
 
+// WithLogger sets an optional structured logger for the client.
+// When set, the client logs LLM requests and responses at debug level.
+func (c *OpenAIClient) WithLogger(logger *slog.Logger) *OpenAIClient {
+	c.logger = logger
+	return c
+}
+
 // llmInput bundles the inputs for an LLM call.
 type llmInput struct {
 	messages []agent.Message
@@ -99,6 +108,16 @@ type llmInput struct {
 // - Retry: handles transient network failures.
 // - Circuit Breaker: prevents cascading failures when LLM is down.
 func (c *OpenAIClient) Run(ctx context.Context, messages []agent.Message, tools []agent.ToolDefinition) (agent.LLMResponse, error) {
+	start := time.Now()
+
+	if c.logger != nil {
+		c.logger.Debug("llm request started",
+			"model", c.model,
+			"message_count", len(messages),
+			"tool_count", len(tools),
+		)
+	}
+
 	// Create the base function that performs the actual LLM call
 	baseFn := func(ctx context.Context, in llmInput) (agent.LLMResponse, error) {
 		apiMessages := c.convertToAPIMessages(in.messages)
@@ -121,7 +140,27 @@ func (c *OpenAIClient) Run(ctx context.Context, messages []agent.Message, tools 
 	fn = stability.Retry(fn, c.retryAttempts, c.retryDelay)
 	fn = stability.Breaker(fn, c.breakerThresh)
 
-	return fn(ctx, llmInput{messages: messages, tools: tools})
+	response, err := fn(ctx, llmInput{messages: messages, tools: tools})
+
+	if c.logger != nil {
+		duration := time.Since(start)
+		if err != nil {
+			c.logger.Error("llm request failed",
+				"model", c.model,
+				"duration", duration,
+				"error", err.Error(),
+			)
+		} else {
+			c.logger.Debug("llm request completed",
+				"model", c.model,
+				"duration", duration,
+				"finish_reason", response.FinishReason,
+				"tool_call_count", len(response.ToolCalls),
+			)
+		}
+	}
+
+	return response, err
 }
 
 // convertToAPIMessages converts domain messages to API format.

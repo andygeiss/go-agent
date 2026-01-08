@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/andygeiss/cloud-native-utils/stability"
@@ -20,6 +21,7 @@ const (
 // Tool execution is wrapped with timeout to prevent runaway tools.
 type ToolExecutor struct {
 	tools       map[string]ToolFunc
+	logger      *slog.Logger
 	toolTimeout time.Duration
 }
 
@@ -47,6 +49,13 @@ func (e *ToolExecutor) WithToolTimeout(timeout time.Duration) *ToolExecutor {
 	return e
 }
 
+// WithLogger sets an optional structured logger for the executor.
+// When set, the executor logs tool executions at debug level.
+func (e *ToolExecutor) WithLogger(logger *slog.Logger) *ToolExecutor {
+	e.logger = logger
+	return e
+}
+
 // RegisterTool registers a new tool with the executor.
 func (e *ToolExecutor) RegisterTool(name string, fn ToolFunc) {
 	e.tools[name] = fn
@@ -57,7 +66,16 @@ func (e *ToolExecutor) RegisterTool(name string, fn ToolFunc) {
 func (e *ToolExecutor) Execute(ctx context.Context, toolName string, arguments string) (string, error) {
 	fn, ok := e.tools[toolName]
 	if !ok {
+		if e.logger != nil {
+			e.logger.Warn("tool not found", "tool", toolName)
+		}
 		return "", fmt.Errorf("tool not found: %s", toolName)
+	}
+
+	start := time.Now()
+
+	if e.logger != nil {
+		e.logger.Debug("tool execution started", "tool", toolName)
 	}
 
 	// Wrap the tool function with timeout using stability pattern
@@ -68,7 +86,25 @@ func (e *ToolExecutor) Execute(ctx context.Context, toolName string, arguments s
 		e.toolTimeout,
 	)
 
-	return wrappedFn(ctx, arguments)
+	result, err := wrappedFn(ctx, arguments)
+
+	if e.logger != nil {
+		duration := time.Since(start)
+		if err != nil {
+			e.logger.Error("tool execution failed",
+				"tool", toolName,
+				"duration", duration,
+				"error", err.Error(),
+			)
+		} else {
+			e.logger.Debug("tool execution completed",
+				"tool", toolName,
+				"duration", duration,
+			)
+		}
+	}
+
+	return result, err
 }
 
 // GetAvailableTools returns the list of available tool names.

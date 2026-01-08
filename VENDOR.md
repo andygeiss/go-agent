@@ -19,6 +19,7 @@ This document catalogs the external vendor libraries used in this project, expla
 | Package | Description | Used In |
 |---------|-------------|---------|
 | `assert` | Minimal test assertion helper | All `*_test.go` files |
+| `logging` | Structured JSON logging via `log/slog` | `adapters/outbound/openai_client.go`, `adapters/outbound/tool_executor.go` |
 | `messaging` | Message dispatcher for event publishing | `adapters/outbound/event_publisher.go` |
 | `service` | Context-aware function type `Function[IN, OUT]` | `adapters/outbound/openai_client.go`, `adapters/outbound/tool_executor.go` |
 | `stability` | Resilience patterns (timeout, retry, circuit breaker) | `adapters/outbound/openai_client.go`, `adapters/outbound/tool_executor.go` |
@@ -26,6 +27,7 @@ This document catalogs the external vendor libraries used in this project, expla
 #### When to Use
 
 - **Testing assertions**: Use `assert.That(t, description, actual, expected)` for all test assertions
+- **Structured logging**: Use `logging.NewJsonLogger()` for JSON-formatted logs with level control
 - **Event publishing**: Use `messaging.Dispatcher` for publishing domain events
 - **Resilience patterns**: Use `stability.Timeout`, `stability.Retry`, `stability.Breaker` for external API calls
 - **Context-aware functions**: Use `service.Function[IN, OUT]` as the universal function signature
@@ -34,6 +36,7 @@ This document catalogs the external vendor libraries used in this project, expla
 
 - Don't roll custom timeout/retry logic — use `stability` package instead
 - Don't create new function signatures — align with `service.Function[IN, OUT]`
+- Don't use external logging libraries (logrus, zap) — use `log/slog` via `logging.NewJsonLogger()`
 
 #### Integration Patterns
 
@@ -91,13 +94,34 @@ wrappedFn := stability.Timeout(toolFn, 30*time.Second)
 result, err := wrappedFn(ctx, args)
 ```
 
+**Structured logging (used in adapters):**
+
+```go
+import "github.com/andygeiss/cloud-native-utils/logging"
+
+// Create a JSON logger (level controlled by LOGGING_LEVEL env var)
+logger := logging.NewJsonLogger()
+
+// Inject into adapters
+client := outbound.NewOpenAIClient(baseURL, model).
+    WithLogger(logger)
+
+executor := outbound.NewToolExecutor().
+    WithLogger(logger)
+```
+
+Log levels (via `LOGGING_LEVEL` environment variable):
+- `DEBUG` — All logs including request/response details
+- `INFO` — Default, general operational logs
+- `WARN` — Warning conditions
+- `ERROR` — Error conditions only
+
 #### Available But Not Currently Used
 
 The library offers many other packages that could be useful for future features:
 
 | Package | Potential Use Case |
 |---------|-------------------|
-| `logging` | Structured JSON logging via `log/slog` |
 | `security` | AES encryption, password hashing if needed |
 | `slices` | Generic slice utilities (Map, Filter, Unique) |
 | `stability.Throttle` | Rate limiting for API calls |
@@ -113,6 +137,7 @@ The project relies heavily on Go's standard library for core functionality:
 |---------|-------|
 | `context` | Request cancellation and timeouts |
 | `encoding/json` | JSON serialization for LLM API |
+| `log/slog` | Structured logging (via cloud-native-utils/logging) |
 | `net/http` | HTTP client for OpenAI-compatible APIs |
 | `time` | Timestamps on entities |
 | `testing` | Test framework (with cloud-native-utils/assert) |

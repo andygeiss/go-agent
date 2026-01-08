@@ -25,6 +25,8 @@ The library is designed to be imported and extended, with a reference CLI applic
 | LLM API | OpenAI-compatible (LM Studio, OpenAI, etc.) |
 | Testing | `testing` + `github.com/andygeiss/cloud-native-utils/assert` |
 | Event Bus | `github.com/andygeiss/cloud-native-utils/messaging` |
+| Resilience | `github.com/andygeiss/cloud-native-utils/stability` |
+| Logging | `log/slog` via `github.com/andygeiss/cloud-native-utils/logging` |
 | HTTP | Standard library `net/http` |
 | Build | `go build` with PGO support |
 | Container | Multi-stage Docker (scratch runtime) |
@@ -187,8 +189,10 @@ go-agent/
 
 **Logging:**
 - No logging in library code (`pkg/agent/`)
-- Use hooks for observability in applications
-- Applications can add logging through `WithAfterToolCall`, `WithAfterTask`, etc.
+- Adapters support optional structured logging via `WithLogger(*slog.Logger)`
+- Use `logging.NewJsonLogger()` from cloud-native-utils for JSON output
+- Log level controlled by `LOGGING_LEVEL` environment variable (DEBUG, INFO, WARN, ERROR)
+- Use hooks for additional observability in applications
 
 ### 5.4 Testing
 
@@ -315,7 +319,36 @@ See [VENDOR.md](VENDOR.md) for approved vendor libraries and usage patterns. Key
 
 - Use `cloud-native-utils/assert` for testing assertions
 - Use `cloud-native-utils/messaging` for event publishing
+- Use `cloud-native-utils/stability` for resilience patterns
 - Prefer Go standard library for HTTP, JSON, context
+
+### Resilience Patterns
+
+External calls (LLM, tools) are wrapped with resilience patterns from `cloud-native-utils/stability`:
+
+| Pattern | Purpose | Default |
+|---------|---------|---------|
+| `stability.Timeout` | Enforce maximum execution time | LLM: 120s, Tools: 30s |
+| `stability.Retry` | Handle transient failures | 3 attempts, 2s delay |
+| `stability.Breaker` | Prevent cascading failures | Opens after 5 failures |
+
+**LLM Call Flow:**
+```
+Request → Timeout(120s) → Retry(3, 2s) → Breaker(5) → HTTP POST
+```
+
+**Tool Execution Flow:**
+```
+Execute → Timeout(30s) → Tool Function
+```
+
+All settings are configurable via builder methods:
+```go
+client := outbound.NewOpenAIClient(baseURL, model).
+    WithLLMTimeout(90 * time.Second).
+    WithRetry(5, 3*time.Second).
+    WithCircuitBreaker(10)
+```
 
 ---
 
@@ -418,7 +451,6 @@ go run ./cmd/cli \
 ### Technical Debt
 
 - `calculate` tool returns placeholder result (expression evaluation not implemented)
-- No retry/circuit breaker for LLM calls (consider `cloud-native-utils/stability`)
 
 ---
 
