@@ -22,6 +22,20 @@ alias d := down
 alias t := test
 
 # ======================================
+# Bench - Run performance benchmarks
+# ======================================
+# Runs all benchmarks in pkg/agent with memory allocation stats
+# Use for performance regression testing and optimization
+#
+# Usage:
+#   just bench                    # Run all benchmarks
+#   go test -bench=. -benchmem -count=5 ./pkg/agent/  # Multiple iterations
+
+bench:
+    @echo "Running benchmarks..."
+    @go test -bench=. -benchmem ./pkg/agent/
+
+# ======================================
 # Build - Create Docker image
 # ======================================
 # Builds the application container image.

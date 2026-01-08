@@ -364,6 +364,65 @@ client := outbound.NewOpenAIClient(baseURL, model).
     WithThrottle(10, 2, time.Second)  // 10 calls max, refill 2/sec
 ```
 
+### Parallel Tool Execution
+
+When the LLM returns multiple tool calls, they can be executed concurrently using `cloud-native-utils/efficiency`:
+
+```go
+taskService := agent.NewTaskService(llmClient, toolExecutor, publisher).
+    WithParallelToolExecution()
+```
+
+**Sequential (default):**
+```
+Tool1 → Tool2 → Tool3 (total time = sum of all)
+```
+
+**Parallel:**
+```
+Tool1 ─┐
+Tool2 ─┼─→ Results (total time = max of all)
+Tool3 ─┘
+```
+
+Parallel execution is ideal for I/O-bound tools (API calls, file operations). For CPU-bound operations, sequential may be more efficient due to coordination overhead.
+
+### Conversation Persistence
+
+Persist conversation history using `cloud-native-utils/resource`:
+
+```go
+// In-memory storage (for testing)
+store := outbound.NewInMemoryConversationStore()
+
+// JSON file storage (for production)
+store := outbound.NewJsonFileConversationStore("conversations.json")
+
+// ConversationStore interface
+type ConversationStore interface {
+    Save(ctx context.Context, agentID AgentID, messages []Message) error
+    Load(ctx context.Context, agentID AgentID) ([]Message, error)
+    Clear(ctx context.Context, agentID AgentID) error
+}
+```
+
+### Encrypted Storage
+
+Protect sensitive conversation data with AES-GCM encryption from `cloud-native-utils/security`:
+
+```go
+// Generate encryption key (store securely!)
+key := security.GenerateKey()
+
+// Wrap any ConversationStore with encryption
+baseStore := outbound.NewJsonFileConversationStore("conversations.json")
+encStore := outbound.NewEncryptedConversationStore(baseStore, key)
+
+// Use like any ConversationStore
+err := encStore.Save(ctx, agentID, messages)
+messages, err := encStore.Load(ctx, agentID)
+```
+
 ---
 
 ## 7. Using This Repo as a Template
@@ -409,6 +468,7 @@ client := outbound.NewOpenAIClient(baseURL, model).
 | `just test` | Run unit tests with coverage |
 | `just test-integration` | Run integration tests (requires LM Studio) |
 | `just run` | Run CLI application locally |
+| `just bench` | Run performance benchmarks |
 | `just build` | Build Docker image |
 | `just up` | Start services with docker-compose |
 | `just down` | Stop services |

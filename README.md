@@ -123,6 +123,7 @@ go-agent/
 | `just test` | Run unit tests with coverage |
 | `just test-integration` | Run integration tests (requires LM Studio) |
 | `just run` | Run CLI application locally |
+| `just bench` | Run performance benchmarks |
 | `just build` | Build Docker image |
 | `just up` | Start all services (build + docker-compose) |
 | `just down` | Stop all services |
@@ -375,7 +376,7 @@ go test -v ./internal/...
 just test-integration
 
 # Run benchmarks
-go test -bench=. -benchmem ./pkg/agent/
+just bench
 ```
 
 ### Benchmarks
