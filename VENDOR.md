@@ -398,5 +398,5 @@ Before adding a new dependency:
 ## Related Documentation
 
 - [CONTEXT.md](CONTEXT.md) - Project architecture and conventions
-- [README.md](README.md) - User-facing documentation
 - [go.mod](go.mod) - Dependency manifest
+- [README.md](README.md) - User-facing documentation

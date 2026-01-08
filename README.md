@@ -162,8 +162,8 @@ go run ./cmd/cli \
 
 | Command | Description |
 |---------|-------------|
-| `quit` / `exit` | Exit with session summary |
 | `clear` | Clear conversation history |
+| `quit` / `exit` | Exit with session summary |
 | `stats` | Show agent statistics |
 
 ## Architecture
@@ -376,8 +376,8 @@ The agent includes functional demo tools:
 
 | Tool | Description |
 |------|-------------|
-| `get_current_time` | Returns the current date and time in RFC3339 format |
 | `calculate` | Evaluates arithmetic expressions with +, -, *, / and parentheses |
+| `get_current_time` | Returns the current date and time in RFC3339 format |
 
 **Note**: These tools are for demonstration. For production use, register your own domain-specific tools.
 
@@ -572,9 +572,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Related Documentation
 
+- [AGENTS.md](AGENTS.md) — AI agent definitions for this repository
 - [CONTEXT.md](CONTEXT.md) — Architecture, conventions, and project contracts
 - [VENDOR.md](VENDOR.md) — Approved vendor libraries and usage patterns
-- [AGENTS.md](AGENTS.md) — AI agent definitions for this repository
 
 ## Acknowledgments
 
