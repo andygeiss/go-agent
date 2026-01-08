@@ -116,6 +116,21 @@ Log levels (via `LOGGING_LEVEL` environment variable):
 - `WARN` — Warning conditions
 - `ERROR` — Error conditions only
 
+**Rate limiting with throttle (used in OpenAIClient):**
+
+```go
+import "github.com/andygeiss/cloud-native-utils/stability"
+
+// Token bucket rate limiting:
+// - maxTokens: 10 calls allowed in bucket
+// - refill: 2 tokens added per period
+// - period: 1 second refill interval
+client := outbound.NewOpenAIClient(baseURL, model).
+    WithThrottle(10, 2, time.Second)
+```
+
+When rate limit is exceeded, returns `stability.ErrorThrottleTooManyCalls`.
+
 #### Available But Not Currently Used
 
 The library offers many other packages that could be useful for future features:
@@ -124,7 +139,6 @@ The library offers many other packages that could be useful for future features:
 |---------|-------------------|
 | `security` | AES encryption, password hashing if needed |
 | `slices` | Generic slice utilities (Map, Filter, Unique) |
-| `stability.Throttle` | Rate limiting for API calls |
 | `stability.Debounce` | Coalescing rapid successive calls |
 
 ---

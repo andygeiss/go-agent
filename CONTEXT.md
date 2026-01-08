@@ -331,10 +331,11 @@ External calls (LLM, tools) are wrapped with resilience patterns from `cloud-nat
 | `stability.Timeout` | Enforce maximum execution time | LLM: 120s, Tools: 30s |
 | `stability.Retry` | Handle transient failures | 3 attempts, 2s delay |
 | `stability.Breaker` | Prevent cascading failures | Opens after 5 failures |
+| `stability.Throttle` | Rate limit API calls | Disabled (opt-in) |
 
-**LLM Call Flow:**
+**LLM Call Flow (with throttling enabled):**
 ```
-Request → Timeout(120s) → Retry(3, 2s) → Breaker(5) → HTTP POST
+Request → Timeout(120s) → Retry(3, 2s) → Breaker(5) → Throttle(tokens) → HTTP POST
 ```
 
 **Tool Execution Flow:**
@@ -347,7 +348,8 @@ All settings are configurable via builder methods:
 client := outbound.NewOpenAIClient(baseURL, model).
     WithLLMTimeout(90 * time.Second).
     WithRetry(5, 3*time.Second).
-    WithCircuitBreaker(10)
+    WithCircuitBreaker(10).
+    WithThrottle(10, 2, time.Second)  // 10 calls max, refill 2/sec
 ```
 
 ---

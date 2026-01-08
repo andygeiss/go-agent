@@ -19,11 +19,14 @@ import (
 
 // Default configuration for LLM client resilience.
 const (
-	defaultHTTPTimeout   = 60 * time.Second  // HTTP client timeout
-	defaultLLMTimeout    = 120 * time.Second // LLM call timeout (longer for complex prompts)
-	defaultRetryAttempts = 3                 // Number of retry attempts
-	defaultRetryDelay    = 2 * time.Second   // Delay between retries
-	defaultBreakerThresh = 5                 // Circuit breaker failure threshold
+	defaultHTTPTimeout    = 60 * time.Second  // HTTP client timeout
+	defaultLLMTimeout     = 120 * time.Second // LLM call timeout (longer for complex prompts)
+	defaultRetryAttempts  = 3                 // Number of retry attempts
+	defaultRetryDelay     = 2 * time.Second   // Delay between retries
+	defaultBreakerThresh  = 5                 // Circuit breaker failure threshold
+	defaultThrottleTokens = 0                 // Throttle disabled by default (0 = no limit)
+	defaultThrottleRefill = 1                 // Tokens to refill per period
+	defaultThrottlePeriod = time.Second       // Refill period
 )
 
 // The adapter translates between domain types (agent.Message, agent.ToolCall)
@@ -31,16 +34,19 @@ const (
 
 // OpenAIClient implements the agent.LLMClient interface.
 // It communicates with LM Studio using the OpenAI-compatible API.
-// It wraps LLM calls with resilience patterns (timeout, retry, circuit breaker).
+// It wraps LLM calls with resilience patterns (timeout, retry, circuit breaker, throttle).
 type OpenAIClient struct {
-	httpClient    *http.Client
-	logger        *slog.Logger
-	baseURL       string
-	model         string
-	llmTimeout    time.Duration
-	retryDelay    time.Duration
-	retryAttempts int
-	breakerThresh int
+	httpClient     *http.Client
+	logger         *slog.Logger
+	baseURL        string
+	model          string
+	llmTimeout     time.Duration
+	retryDelay     time.Duration
+	throttlePeriod time.Duration
+	retryAttempts  int
+	breakerThresh  int
+	throttleTokens uint
+	throttleRefill uint
 }
 
 // NewOpenAIClient creates a new OpenAIClient instance with sensible defaults.
@@ -49,6 +55,7 @@ type OpenAIClient struct {
 // - LLM call timeout: 120s.
 // - Retry: 3 attempts with 2s delay.
 // - Circuit breaker: opens after 5 consecutive failures.
+// - Throttle: disabled by default (set via WithThrottle).
 func NewOpenAIClient(baseURL, model string) *OpenAIClient {
 	return &OpenAIClient{
 		baseURL: baseURL,
@@ -56,10 +63,13 @@ func NewOpenAIClient(baseURL, model string) *OpenAIClient {
 		httpClient: &http.Client{
 			Timeout: defaultHTTPTimeout,
 		},
-		llmTimeout:    defaultLLMTimeout,
-		retryAttempts: defaultRetryAttempts,
-		retryDelay:    defaultRetryDelay,
-		breakerThresh: defaultBreakerThresh,
+		llmTimeout:     defaultLLMTimeout,
+		retryAttempts:  defaultRetryAttempts,
+		retryDelay:     defaultRetryDelay,
+		breakerThresh:  defaultBreakerThresh,
+		throttleTokens: defaultThrottleTokens,
+		throttleRefill: defaultThrottleRefill,
+		throttlePeriod: defaultThrottlePeriod,
 	}
 }
 
@@ -92,6 +102,18 @@ func (c *OpenAIClient) WithCircuitBreaker(threshold int) *OpenAIClient {
 // When set, the client logs LLM requests and responses at debug level.
 func (c *OpenAIClient) WithLogger(logger *slog.Logger) *OpenAIClient {
 	c.logger = logger
+	return c
+}
+
+// WithThrottle configures rate limiting for LLM calls using a token bucket algorithm.
+// - maxTokens: maximum number of calls allowed in the bucket.
+// - refill: number of tokens to add each period.
+// - period: how often tokens are refilled.
+// Set maxTokens to 0 to disable throttling (default).
+func (c *OpenAIClient) WithThrottle(maxTokens, refill uint, period time.Duration) *OpenAIClient {
+	c.throttleTokens = maxTokens
+	c.throttleRefill = refill
+	c.throttlePeriod = period
 	return c
 }
 
@@ -135,10 +157,14 @@ func (c *OpenAIClient) Run(ctx context.Context, messages []agent.Message, tools 
 	// 1. Timeout - enforce maximum execution time
 	// 2. Retry - handle transient failures
 	// 3. Circuit Breaker - prevent cascading failures
+	// 4. Throttle - rate limit API calls (if enabled)
 	var fn service.Function[llmInput, agent.LLMResponse] = baseFn
 	fn = stability.Timeout(fn, c.llmTimeout)
 	fn = stability.Retry(fn, c.retryAttempts, c.retryDelay)
 	fn = stability.Breaker(fn, c.breakerThresh)
+	if c.throttleTokens > 0 {
+		fn = stability.Throttle(fn, c.throttleTokens, c.throttleRefill, c.throttlePeriod)
+	}
 
 	response, err := fn(ctx, llmInput{messages: messages, tools: tools})
 
