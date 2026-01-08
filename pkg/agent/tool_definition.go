@@ -1,5 +1,7 @@
 package agent
 
+import "github.com/andygeiss/cloud-native-utils/slices"
+
 // ParameterType represents the JSON schema type of a tool parameter.
 type ParameterType string
 
@@ -92,13 +94,12 @@ func (td ToolDefinition) WithParameterDef(param ParameterDefinition) ToolDefinit
 
 // GetRequiredParameters returns the names of all required parameters.
 func (td ToolDefinition) GetRequiredParameters() []string {
-	required := make([]string, 0)
-	for _, p := range td.Parameters {
-		if p.Required {
-			required = append(required, p.Name)
-		}
-	}
-	return required
+	requiredParams := slices.Filter(td.Parameters, func(p ParameterDefinition) bool {
+		return p.Required
+	})
+	return slices.Map(requiredParams, func(p ParameterDefinition) string {
+		return p.Name
+	})
 }
 
 // HasParameter checks if a parameter with the given name exists.

@@ -22,6 +22,7 @@ This document catalogs the external vendor libraries used in this project, expla
 | `logging` | Structured JSON logging via `log/slog` | `adapters/outbound/openai_client.go`, `adapters/outbound/tool_executor.go` |
 | `messaging` | Message dispatcher for event publishing | `adapters/outbound/event_publisher.go` |
 | `service` | Context-aware function type `Function[IN, OUT]` | `adapters/outbound/openai_client.go`, `adapters/outbound/tool_executor.go` |
+| `slices` | Generic slice utilities (Filter, Map, Unique, etc.) | `pkg/agent/agent.go`, `pkg/agent/tool_definition.go`, `adapters/outbound/openai_client.go` |
 | `stability` | Resilience patterns (timeout, retry, circuit breaker) | `adapters/outbound/openai_client.go`, `adapters/outbound/tool_executor.go` |
 
 #### When to Use
@@ -29,6 +30,7 @@ This document catalogs the external vendor libraries used in this project, expla
 - **Testing assertions**: Use `assert.That(t, description, actual, expected)` for all test assertions
 - **Structured logging**: Use `logging.NewJsonLogger()` for JSON-formatted logs with level control
 - **Event publishing**: Use `messaging.Dispatcher` for publishing domain events
+- **Slice transformations**: Use `slices.Filter`, `slices.Map`, `slices.Unique` for collection operations
 - **Resilience patterns**: Use `stability.Timeout`, `stability.Retry`, `stability.Breaker` for external API calls
 - **Context-aware functions**: Use `service.Function[IN, OUT]` as the universal function signature
 
@@ -37,6 +39,7 @@ This document catalogs the external vendor libraries used in this project, expla
 - Don't roll custom timeout/retry logic — use `stability` package instead
 - Don't create new function signatures — align with `service.Function[IN, OUT]`
 - Don't use external logging libraries (logrus, zap) — use `log/slog` via `logging.NewJsonLogger()`
+- Don't write manual filter/map loops — use `slices.Filter`, `slices.Map` instead
 
 #### Integration Patterns
 
@@ -131,6 +134,36 @@ client := outbound.NewOpenAIClient(baseURL, model).
 
 When rate limit is exceeded, returns `stability.ErrorThrottleTooManyCalls`.
 
+**Slice utilities (used in agent and adapters):**
+
+```go
+import "github.com/andygeiss/cloud-native-utils/slices"
+
+// Filter: select elements matching predicate
+requiredParams := slices.Filter(params, func(p ParameterDefinition) bool {
+    return p.Required
+})
+
+// Map: transform elements to new type
+names := slices.Map(requiredParams, func(p ParameterDefinition) string {
+    return p.Name
+})
+
+// Combined Filter + Map pattern (common for extracting filtered fields)
+completedCount := len(slices.Filter(tasks, func(t *Task) bool {
+    return t.Status == TaskStatusCompleted
+}))
+
+// Other utilities available
+slices.Contains(slice, element)     // Check if element exists
+slices.ContainsAny(slice, elements) // Check if any elements exist
+slices.Unique(slice)                // Remove duplicates
+slices.First(slice)                 // Get first element (value, ok)
+slices.Last(slice)                  // Get last element (value, ok)
+slices.IndexOf(slice, element)      // Find element index (-1 if not found)
+slices.Copy(slice)                  // Shallow copy
+```
+
 #### Available But Not Currently Used
 
 The library offers many other packages that could be useful for future features:
@@ -138,7 +171,6 @@ The library offers many other packages that could be useful for future features:
 | Package | Potential Use Case |
 |---------|-------------------|
 | `security` | AES encryption, password hashing if needed |
-| `slices` | Generic slice utilities (Map, Filter, Unique) |
 | `stability.Debounce` | Coalescing rapid successive calls |
 
 ---
@@ -155,7 +187,6 @@ The project relies heavily on Go's standard library for core functionality:
 | `net/http` | HTTP client for OpenAI-compatible APIs |
 | `time` | Timestamps on entities |
 | `testing` | Test framework (with cloud-native-utils/assert) |
-| `slices` | `slices.Contains()` for collection operations |
 
 ---
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/andygeiss/cloud-native-utils/service"
+	"github.com/andygeiss/cloud-native-utils/slices"
 	"github.com/andygeiss/cloud-native-utils/stability"
 	"github.com/andygeiss/go-agent/pkg/agent"
 	"github.com/andygeiss/go-agent/pkg/openai"
@@ -276,11 +277,8 @@ func (c *OpenAIClient) convertToAPITools(tools []agent.ToolDefinition) []openai.
 	if len(tools) == 0 {
 		return nil
 	}
-	apiTools := make([]openai.Tool, len(tools))
-	for i, tool := range tools {
+	return slices.Map(tools, func(tool agent.ToolDefinition) openai.Tool {
 		properties := make(map[string]openai.PropertyDefinition)
-		required := make([]string, 0, len(tool.Parameters))
-
 		for _, param := range tool.Parameters {
 			prop := openai.PropertyDefinition{
 				Type:        string(param.Type),
@@ -290,12 +288,16 @@ func (c *OpenAIClient) convertToAPITools(tools []agent.ToolDefinition) []openai.
 				prop.Enum = param.Enum
 			}
 			properties[param.Name] = prop
-			if param.Required {
-				required = append(required, param.Name)
-			}
 		}
 
-		apiTools[i] = openai.Tool{
+		requiredParams := slices.Filter(tool.Parameters, func(p agent.ParameterDefinition) bool {
+			return p.Required
+		})
+		required := slices.Map(requiredParams, func(p agent.ParameterDefinition) string {
+			return p.Name
+		})
+
+		return openai.Tool{
 			Type: "function",
 			Function: openai.FunctionDefinition{
 				Name:        tool.Name,
@@ -307,6 +309,5 @@ func (c *OpenAIClient) convertToAPITools(tools []agent.ToolDefinition) []openai.
 				},
 			},
 		}
-	}
-	return apiTools
+	})
 }

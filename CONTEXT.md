@@ -27,6 +27,7 @@ The library is designed to be imported and extended, with a reference CLI applic
 | Event Bus | `github.com/andygeiss/cloud-native-utils/messaging` |
 | Resilience | `github.com/andygeiss/cloud-native-utils/stability` |
 | Logging | `log/slog` via `github.com/andygeiss/cloud-native-utils/logging` |
+| Slice Utils | `github.com/andygeiss/cloud-native-utils/slices` |
 | HTTP | Standard library `net/http` |
 | Build | `go build` with PGO support |
 | Container | Multi-stage Docker (scratch runtime) |
@@ -320,6 +321,7 @@ See [VENDOR.md](VENDOR.md) for approved vendor libraries and usage patterns. Key
 - Use `cloud-native-utils/assert` for testing assertions
 - Use `cloud-native-utils/messaging` for event publishing
 - Use `cloud-native-utils/stability` for resilience patterns
+- Use `cloud-native-utils/slices` for Filter/Map/Unique operations
 - Prefer Go standard library for HTTP, JSON, context
 
 ### Resilience Patterns

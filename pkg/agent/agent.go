@@ -1,5 +1,7 @@
 package agent
 
+import "github.com/andygeiss/cloud-native-utils/slices"
+
 // Agent is the aggregate root that coordinates task execution.
 // It maintains conversation state and manages the agent loop lifecycle.
 type Agent struct {
@@ -141,24 +143,16 @@ func (a *Agent) MessageCount() int {
 
 // CompletedTaskCount returns the number of completed tasks.
 func (a *Agent) CompletedTaskCount() int {
-	count := 0
-	for _, task := range a.Tasks {
-		if task.Status == TaskStatusCompleted {
-			count++
-		}
-	}
-	return count
+	return len(slices.Filter(a.Tasks, func(t *Task) bool {
+		return t.Status == TaskStatusCompleted
+	}))
 }
 
 // FailedTaskCount returns the number of failed tasks.
 func (a *Agent) FailedTaskCount() int {
-	count := 0
-	for _, task := range a.Tasks {
-		if task.Status == TaskStatusFailed {
-			count++
-		}
-	}
-	return count
+	return len(slices.Filter(a.Tasks, func(t *Task) bool {
+		return t.Status == TaskStatusFailed
+	}))
 }
 
 // trimMessagesIfNeeded removes oldest messages if MaxMessages limit is exceeded.
