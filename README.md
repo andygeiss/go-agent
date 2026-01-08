@@ -105,19 +105,19 @@ go-agent/
 │   └── domain/chat/            # Chat domain use cases
 ├── pkg/
 │   ├── agent/                  # Reusable agent library
-│   │   ├── types.go            # ID types, Role, Status constants
 │   │   ├── agent.go            # Agent aggregate with options
 │   │   ├── errors.go           # Typed errors (LLMError, ToolError, TaskError)
+│   │   ├── events/             # Domain events
 │   │   ├── hooks.go            # Lifecycle hooks/middleware
+│   │   ├── llm_response.go     # LLM response wrapper
+│   │   ├── message.go          # Conversation messages
+│   │   ├── ports.go            # Interfaces (LLMClient, ToolExecutor)
+│   │   ├── result.go           # Task result with metrics
 │   │   ├── task.go             # Task entity with timestamps
 │   │   ├── task_service.go     # Agent loop orchestration
-│   │   ├── message.go          # Conversation messages
-│   │   ├── llm_response.go     # LLM response wrapper
-│   │   ├── result.go           # Task result with metrics
 │   │   ├── tool_call.go        # Tool call entity
 │   │   ├── tool_definition.go  # Tool definitions with parameter types
-│   │   ├── ports.go            # Interfaces (LLMClient, ToolExecutor)
-│   │   └── events/             # Domain events
+│   │   └── types.go            # ID types, Role, Status constants
 │   ├── event/                  # Event interfaces
 │   └── openai/                 # OpenAI API structures
 ```
