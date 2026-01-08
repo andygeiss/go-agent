@@ -2,12 +2,18 @@ package agent
 
 import "github.com/andygeiss/cloud-native-utils/slices"
 
+// Metadata holds arbitrary key-value pairs for agent context.
+type Metadata map[string]string
+
+// Option is a functional option for configuring an Agent.
+type Option func(*Agent)
+
 // Agent is the aggregate root that coordinates task execution.
 // It maintains conversation state and manages the agent loop lifecycle.
 type Agent struct {
 	Metadata      Metadata
-	ID            AgentID
 	SystemPrompt  string
+	ID            AgentID
 	Messages      []Message
 	Tasks         []*Task
 	Iteration     int
@@ -15,24 +21,18 @@ type Agent struct {
 	MaxMessages   int
 }
 
-// Metadata holds arbitrary key-value pairs for agent context.
-type Metadata map[string]string
-
-// Option is a functional option for configuring an Agent.
-type Option func(*Agent)
-
 // NewAgent creates a new Agent with the given ID and system prompt.
 // Default max iterations is set to 10.
 func NewAgent(id AgentID, systemPrompt string, opts ...Option) Agent {
 	ag := Agent{
 		ID:            id,
-		SystemPrompt:  systemPrompt,
-		Messages:      make([]Message, 0),
-		Tasks:         make([]*Task, 0),
 		Iteration:     0,
 		MaxIterations: 10,
 		MaxMessages:   0,
+		Messages:      make([]Message, 0),
 		Metadata:      make(Metadata),
+		SystemPrompt:  systemPrompt,
+		Tasks:         make([]*Task, 0),
 	}
 	for _, opt := range opts {
 		opt(&ag)
@@ -84,6 +84,20 @@ func (a *Agent) ClearMessages() {
 	a.Messages = make([]Message, 0)
 }
 
+// CompletedTaskCount returns the number of completed tasks.
+func (a *Agent) CompletedTaskCount() int {
+	return len(slices.Filter(a.Tasks, func(t *Task) bool {
+		return t.Status == TaskStatusCompleted
+	}))
+}
+
+// FailedTaskCount returns the number of failed tasks.
+func (a *Agent) FailedTaskCount() int {
+	return len(slices.Filter(a.Tasks, func(t *Task) bool {
+		return t.Status == TaskStatusFailed
+	}))
+}
+
 // GetCurrentTask returns the first non-terminal task, or nil if none exist.
 func (a *Agent) GetCurrentTask() *Task {
 	for _, task := range a.Tasks {
@@ -104,11 +118,6 @@ func (a *Agent) GetMetadata(key string) string {
 	return a.Metadata[key]
 }
 
-// SetMetadata sets a metadata key-value pair.
-func (a *Agent) SetMetadata(key, value string) {
-	a.Metadata[key] = value
-}
-
 // HasPendingTasks returns true if there are non-terminal tasks in the queue.
 func (a *Agent) HasPendingTasks() bool {
 	return a.GetCurrentTask() != nil
@@ -117,6 +126,11 @@ func (a *Agent) HasPendingTasks() bool {
 // IncrementIteration increases the iteration counter by one.
 func (a *Agent) IncrementIteration() {
 	a.Iteration++
+}
+
+// MessageCount returns the number of messages in the conversation history.
+func (a *Agent) MessageCount() int {
+	return len(a.Messages)
 }
 
 // ResetIteration sets the iteration counter back to zero.
@@ -131,28 +145,14 @@ func (a *Agent) SetMaxIterations(maxIter int) {
 	a.MaxIterations = maxIter
 }
 
+// SetMetadata sets a metadata key-value pair.
+func (a *Agent) SetMetadata(key, value string) {
+	a.Metadata[key] = value
+}
+
 // TaskCount returns the number of tasks in the queue.
 func (a *Agent) TaskCount() int {
 	return len(a.Tasks)
-}
-
-// MessageCount returns the number of messages in the conversation history.
-func (a *Agent) MessageCount() int {
-	return len(a.Messages)
-}
-
-// CompletedTaskCount returns the number of completed tasks.
-func (a *Agent) CompletedTaskCount() int {
-	return len(slices.Filter(a.Tasks, func(t *Task) bool {
-		return t.Status == TaskStatusCompleted
-	}))
-}
-
-// FailedTaskCount returns the number of failed tasks.
-func (a *Agent) FailedTaskCount() int {
-	return len(slices.Filter(a.Tasks, func(t *Task) bool {
-		return t.Status == TaskStatusFailed
-	}))
 }
 
 // trimMessagesIfNeeded removes oldest messages if MaxMessages limit is exceeded.

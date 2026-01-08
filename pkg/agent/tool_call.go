@@ -3,20 +3,20 @@ package agent
 // ToolCall represents a tool invocation requested by the LLM.
 // It tracks the tool name, arguments, and execution result.
 type ToolCall struct {
+	Arguments string         `json:"arguments"`        // JSON-encoded arguments
+	Error     string         `json:"error,omitempty"`  // Error message if failed
 	ID        ToolCallID     `json:"id"`               // Unique identifier for this call
 	Name      string         `json:"name"`             // Name of the tool to execute
-	Arguments string         `json:"arguments"`        // JSON-encoded arguments
 	Result    string         `json:"result,omitempty"` // Execution result
-	Error     string         `json:"error,omitempty"`  // Error message if failed
 	Status    ToolCallStatus `json:"status,omitempty"` // Current execution state
 }
 
 // NewToolCall creates a new ToolCall with the given ID, name, and arguments.
 func NewToolCall(id ToolCallID, name string, arguments string) ToolCall {
 	return ToolCall{
+		Arguments: arguments,
 		ID:        id,
 		Name:      name,
-		Arguments: arguments,
 		Status:    ToolCallStatusPending,
 	}
 }

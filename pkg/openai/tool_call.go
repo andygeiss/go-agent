@@ -2,9 +2,9 @@ package openai
 
 // ToolCall represents a tool call in a message.
 type ToolCall struct {
+	Function FunctionCall `json:"function"`
 	ID       string       `json:"id"`
 	Type     string       `json:"type"`
-	Function FunctionCall `json:"function"`
 }
 
 // NewToolCall creates a new tool call.

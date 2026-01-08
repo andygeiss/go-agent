@@ -15,9 +15,9 @@ type SendMessageInput struct {
 
 // SendMessageOutput contains the output from sending a message.
 type SendMessageOutput struct {
-	Response       string
-	Error          string
 	Duration       string
+	Error          string
+	Response       string
 	IterationCount int
 	ToolCallCount  int
 	Success        bool
@@ -25,8 +25,8 @@ type SendMessageOutput struct {
 
 // SendMessageUseCase handles sending a message to the agent and getting a response.
 type SendMessageUseCase struct {
-	taskRunner  TaskRunner
 	agent       *agent.Agent
+	taskRunner  TaskRunner
 	taskCounter atomic.Int64
 }
 

@@ -4,9 +4,9 @@ package events
 
 // Event topic constants for messaging.
 const (
-	TopicTaskStarted      = "agent.task.started"
 	TopicTaskCompleted    = "agent.task.completed"
 	TopicTaskFailed       = "agent.task.failed"
+	TopicTaskStarted      = "agent.task.started"
 	TopicToolCallExecuted = "agent.toolcall.executed"
 )
 

@@ -13,9 +13,9 @@ import (
 // TaskService orchestrates the agent loop for task execution.
 // It coordinates between the LLM, tools, and event publishing.
 type TaskService struct {
+	eventPublisher EventPublisher
 	llmClient      LLMClient
 	toolExecutor   ToolExecutor
-	eventPublisher EventPublisher
 	hooks          Hooks
 	parallelTools  bool
 }
@@ -23,11 +23,29 @@ type TaskService struct {
 // NewTaskService creates a new TaskService with the given dependencies.
 func NewTaskService(llm LLMClient, executor ToolExecutor, publisher EventPublisher) *TaskService {
 	return &TaskService{
-		llmClient:      llm,
-		toolExecutor:   executor,
 		eventPublisher: publisher,
 		hooks:          NewHooks(),
+		llmClient:      llm,
+		toolExecutor:   executor,
 	}
+}
+
+// RunTask executes a task using the agent loop pattern.
+// It runs iterations until the task completes, fails, or max iterations is reached.
+func (s *TaskService) RunTask(ctx context.Context, agent *Agent, task *Task) (Result, error) {
+	state := &taskState{startTime: time.Now()}
+
+	task.Start()
+	agent.ResetIteration()
+
+	if err := s.runBeforeTaskHook(ctx, agent, task); err != nil {
+		return s.failTask(ctx, task, err.Error(), state)
+	}
+
+	_ = s.eventPublisher.Publish(ctx, events.NewEventTaskStarted(string(task.ID), task.Name))
+	agent.AddMessage(NewMessage(RoleUser, task.Input))
+
+	return s.runAgentLoop(ctx, agent, task, state)
 }
 
 // WithHooks sets the hooks for the task service.
@@ -52,161 +70,6 @@ type taskState struct {
 	toolCallCount int
 }
 
-// RunTask executes a task using the agent loop pattern.
-// It runs iterations until the task completes, fails, or max iterations is reached.
-func (s *TaskService) RunTask(ctx context.Context, agent *Agent, task *Task) (Result, error) {
-	state := &taskState{startTime: time.Now()}
-
-	task.Start()
-	agent.ResetIteration()
-
-	if err := s.runBeforeTaskHook(ctx, agent, task); err != nil {
-		return s.failTask(ctx, task, err.Error(), state)
-	}
-
-	_ = s.eventPublisher.Publish(ctx, events.NewEventTaskStarted(string(task.ID), task.Name))
-	agent.AddMessage(NewMessage(RoleUser, task.Input))
-
-	return s.runAgentLoop(ctx, agent, task, state)
-}
-
-// runBeforeTaskHook executes the before task hook if configured.
-func (s *TaskService) runBeforeTaskHook(ctx context.Context, agent *Agent, task *Task) error {
-	if s.hooks.BeforeTask != nil {
-		return s.hooks.BeforeTask(ctx, agent, task)
-	}
-	return nil
-}
-
-// runAgentLoop executes the main agent loop until completion or failure.
-func (s *TaskService) runAgentLoop(ctx context.Context, agent *Agent, task *Task, state *taskState) (Result, error) {
-	for agent.CanContinue() {
-		if ctx.Err() != nil {
-			return s.failTask(ctx, task, ErrContextCanceled.Error(), state)
-		}
-
-		agent.IncrementIteration()
-		task.IncrementIterations()
-
-		response, err := s.executeIteration(ctx, agent, task)
-		if err != nil {
-			return s.failTask(ctx, task, err.Error(), state)
-		}
-
-		agent.AddMessage(response.Message)
-
-		if response.HasToolCalls() {
-			state.toolCallCount += s.executeToolCalls(ctx, agent, response.ToolCalls)
-			continue
-		}
-
-		return s.completeTask(ctx, agent, task, response.Message.Content, state)
-	}
-
-	return s.failTask(ctx, task, ErrMaxIterationsReached.Error(), state)
-}
-
-// executeIteration runs a single iteration of the agent loop.
-func (s *TaskService) executeIteration(ctx context.Context, agent *Agent, task *Task) (LLMResponse, error) {
-	if s.hooks.BeforeLLMCall != nil {
-		if err := s.hooks.BeforeLLMCall(ctx, agent, task); err != nil {
-			return LLMResponse{}, err
-		}
-	}
-
-	messages := s.buildMessages(agent)
-	response, err := s.llmClient.Run(ctx, messages, s.toolExecutor.GetToolDefinitions())
-	if err != nil {
-		return LLMResponse{}, err
-	}
-
-	if s.hooks.AfterLLMCall != nil {
-		if err := s.hooks.AfterLLMCall(ctx, agent, task); err != nil {
-			return LLMResponse{}, err
-		}
-	}
-
-	return response, nil
-}
-
-// completeTask marks the task as completed and publishes the event.
-func (s *TaskService) completeTask(ctx context.Context, agent *Agent, task *Task, output string, state *taskState) (Result, error) {
-	task.Complete(output)
-
-	if s.hooks.AfterTask != nil {
-		_ = s.hooks.AfterTask(ctx, agent, task)
-	}
-
-	_ = s.eventPublisher.Publish(ctx, events.NewEventTaskCompleted(string(task.ID), task.Output))
-
-	return NewResult(task.ID, true, task.Output).
-		WithDuration(time.Since(state.startTime)).
-		WithIterationCount(agent.Iteration).
-		WithToolCallCount(state.toolCallCount), nil
-}
-
-// buildMessages constructs the message list with system prompt.
-func (s *TaskService) buildMessages(agent *Agent) []Message {
-	messages := make([]Message, 0, len(agent.Messages)+1)
-	messages = append(messages, NewMessage(RoleSystem, agent.SystemPrompt))
-	messages = append(messages, agent.Messages...)
-	return messages
-}
-
-// executeToolCalls runs each tool call and adds results to conversation.
-// Returns the number of tool calls executed.
-// If parallelTools is enabled, tool calls are executed concurrently.
-func (s *TaskService) executeToolCalls(ctx context.Context, agent *Agent, toolCalls []ToolCall) int {
-	if s.parallelTools && len(toolCalls) > 1 {
-		return s.executeToolCallsParallel(ctx, agent, toolCalls)
-	}
-	return s.executeToolCallsSequential(ctx, agent, toolCalls)
-}
-
-// executeToolCallsSequential runs tool calls one at a time (default behavior).
-func (s *TaskService) executeToolCallsSequential(ctx context.Context, agent *Agent, toolCalls []ToolCall) int {
-	count := 0
-	for i := range toolCalls {
-		tc := &toolCalls[i]
-
-		// Run before tool call hook
-		if s.hooks.BeforeToolCall != nil {
-			if err := s.hooks.BeforeToolCall(ctx, agent, tc); err != nil {
-				tc.Fail(err.Error())
-				agent.AddMessage(tc.ToMessage())
-				count++
-				continue
-			}
-		}
-
-		tc.Execute()
-
-		result, err := s.toolExecutor.Execute(ctx, tc.Name, tc.Arguments)
-		if err != nil {
-			tc.Fail(err.Error())
-		} else {
-			tc.Complete(result)
-		}
-
-		// Run after tool call hook
-		if s.hooks.AfterToolCall != nil {
-			_ = s.hooks.AfterToolCall(ctx, agent, tc)
-		}
-
-		// Publish tool call executed event
-		_ = s.eventPublisher.Publish(ctx, events.NewEventToolCallExecuted(
-			string(tc.ID),
-			tc.Name,
-			tc.Result,
-			tc.Error,
-		))
-
-		agent.AddMessage(tc.ToMessage())
-		count++
-	}
-	return count
-}
-
 // toolCallInput bundles the data needed for parallel tool execution.
 type toolCallInput struct {
 	tc    *ToolCall
@@ -219,48 +82,12 @@ type toolCallOutput struct {
 	index int
 }
 
-// executeToolCallsParallel runs tool calls concurrently using the efficiency package.
-// Results are collected and added to the agent in the original order.
-func (s *TaskService) executeToolCallsParallel(ctx context.Context, agent *Agent, toolCalls []ToolCall) int {
-	// Generate channel from tool calls
-	inCh := efficiency.Generate(s.prepareToolCallInputs(toolCalls)...)
-
-	// Process tool calls in parallel
-	outCh, errCh := efficiency.Process(inCh, s.createToolCallProcessor(ctx, agent))
-
-	// Collect and publish results
-	return s.collectAndPublishResults(ctx, agent, toolCalls, outCh, errCh)
-}
-
-// createToolCallProcessor returns a function that processes a single tool call.
-func (s *TaskService) createToolCallProcessor(ctx context.Context, agent *Agent) service.Function[toolCallInput, toolCallOutput] {
-	return func(_ context.Context, input toolCallInput) (toolCallOutput, error) {
-		tc := input.tc
-
-		// Run before tool call hook
-		if s.hooks.BeforeToolCall != nil {
-			if err := s.hooks.BeforeToolCall(ctx, agent, tc); err != nil {
-				tc.Fail(err.Error())
-				return toolCallOutput{tc: tc, index: input.index}, nil
-			}
-		}
-
-		tc.Execute()
-
-		result, err := s.toolExecutor.Execute(ctx, tc.Name, tc.Arguments)
-		if err != nil {
-			tc.Fail(err.Error())
-		} else {
-			tc.Complete(result)
-		}
-
-		// Run after tool call hook
-		if s.hooks.AfterToolCall != nil {
-			_ = s.hooks.AfterToolCall(ctx, agent, tc)
-		}
-
-		return toolCallOutput{tc: tc, index: input.index}, nil
-	}
+// buildMessages constructs the message list with system prompt.
+func (s *TaskService) buildMessages(agent *Agent) []Message {
+	messages := make([]Message, 0, len(agent.Messages)+1)
+	messages = append(messages, NewMessage(RoleSystem, agent.SystemPrompt))
+	messages = append(messages, agent.Messages...)
+	return messages
 }
 
 // collectAndPublishResults gathers parallel results and adds messages in original order.
@@ -316,13 +143,141 @@ func (s *TaskService) collectAndPublishResults(
 	return count
 }
 
-// prepareToolCallInputs creates indexed inputs for parallel processing.
-func (s *TaskService) prepareToolCallInputs(toolCalls []ToolCall) []toolCallInput {
-	inputs := make([]toolCallInput, len(toolCalls))
-	for i := range toolCalls {
-		inputs[i] = toolCallInput{index: i, tc: &toolCalls[i]}
+// completeTask marks the task as completed and publishes the event.
+func (s *TaskService) completeTask(ctx context.Context, agent *Agent, task *Task, output string, state *taskState) (Result, error) {
+	task.Complete(output)
+
+	if s.hooks.AfterTask != nil {
+		_ = s.hooks.AfterTask(ctx, agent, task)
 	}
-	return inputs
+
+	_ = s.eventPublisher.Publish(ctx, events.NewEventTaskCompleted(string(task.ID), task.Output))
+
+	return NewResult(task.ID, true, task.Output).
+		WithDuration(time.Since(state.startTime)).
+		WithIterationCount(agent.Iteration).
+		WithToolCallCount(state.toolCallCount), nil
+}
+
+// createToolCallProcessor returns a function that processes a single tool call.
+func (s *TaskService) createToolCallProcessor(ctx context.Context, agent *Agent) service.Function[toolCallInput, toolCallOutput] {
+	return func(_ context.Context, input toolCallInput) (toolCallOutput, error) {
+		tc := input.tc
+
+		// Run before tool call hook
+		if s.hooks.BeforeToolCall != nil {
+			if err := s.hooks.BeforeToolCall(ctx, agent, tc); err != nil {
+				tc.Fail(err.Error())
+				return toolCallOutput{tc: tc, index: input.index}, nil
+			}
+		}
+
+		tc.Execute()
+
+		result, err := s.toolExecutor.Execute(ctx, tc.Name, tc.Arguments)
+		if err != nil {
+			tc.Fail(err.Error())
+		} else {
+			tc.Complete(result)
+		}
+
+		// Run after tool call hook
+		if s.hooks.AfterToolCall != nil {
+			_ = s.hooks.AfterToolCall(ctx, agent, tc)
+		}
+
+		return toolCallOutput{tc: tc, index: input.index}, nil
+	}
+}
+
+// executeIteration runs a single iteration of the agent loop.
+func (s *TaskService) executeIteration(ctx context.Context, agent *Agent, task *Task) (LLMResponse, error) {
+	if s.hooks.BeforeLLMCall != nil {
+		if err := s.hooks.BeforeLLMCall(ctx, agent, task); err != nil {
+			return LLMResponse{}, err
+		}
+	}
+
+	messages := s.buildMessages(agent)
+	response, err := s.llmClient.Run(ctx, messages, s.toolExecutor.GetToolDefinitions())
+	if err != nil {
+		return LLMResponse{}, err
+	}
+
+	if s.hooks.AfterLLMCall != nil {
+		if err := s.hooks.AfterLLMCall(ctx, agent, task); err != nil {
+			return LLMResponse{}, err
+		}
+	}
+
+	return response, nil
+}
+
+// executeToolCalls runs each tool call and adds results to conversation.
+// Returns the number of tool calls executed.
+// If parallelTools is enabled, tool calls are executed concurrently.
+func (s *TaskService) executeToolCalls(ctx context.Context, agent *Agent, toolCalls []ToolCall) int {
+	if s.parallelTools && len(toolCalls) > 1 {
+		return s.executeToolCallsParallel(ctx, agent, toolCalls)
+	}
+	return s.executeToolCallsSequential(ctx, agent, toolCalls)
+}
+
+// executeToolCallsParallel runs tool calls concurrently using the efficiency package.
+// Results are collected and added to the agent in the original order.
+func (s *TaskService) executeToolCallsParallel(ctx context.Context, agent *Agent, toolCalls []ToolCall) int {
+	// Generate channel from tool calls
+	inCh := efficiency.Generate(s.prepareToolCallInputs(toolCalls)...)
+
+	// Process tool calls in parallel
+	outCh, errCh := efficiency.Process(inCh, s.createToolCallProcessor(ctx, agent))
+
+	// Collect and publish results
+	return s.collectAndPublishResults(ctx, agent, toolCalls, outCh, errCh)
+}
+
+// executeToolCallsSequential runs tool calls one at a time (default behavior).
+func (s *TaskService) executeToolCallsSequential(ctx context.Context, agent *Agent, toolCalls []ToolCall) int {
+	count := 0
+	for i := range toolCalls {
+		tc := &toolCalls[i]
+
+		// Run before tool call hook
+		if s.hooks.BeforeToolCall != nil {
+			if err := s.hooks.BeforeToolCall(ctx, agent, tc); err != nil {
+				tc.Fail(err.Error())
+				agent.AddMessage(tc.ToMessage())
+				count++
+				continue
+			}
+		}
+
+		tc.Execute()
+
+		result, err := s.toolExecutor.Execute(ctx, tc.Name, tc.Arguments)
+		if err != nil {
+			tc.Fail(err.Error())
+		} else {
+			tc.Complete(result)
+		}
+
+		// Run after tool call hook
+		if s.hooks.AfterToolCall != nil {
+			_ = s.hooks.AfterToolCall(ctx, agent, tc)
+		}
+
+		// Publish tool call executed event
+		_ = s.eventPublisher.Publish(ctx, events.NewEventToolCallExecuted(
+			string(tc.ID),
+			tc.Name,
+			tc.Result,
+			tc.Error,
+		))
+
+		agent.AddMessage(tc.ToMessage())
+		count++
+	}
+	return count
 }
 
 // failTask marks the task as failed and publishes the event.
@@ -347,4 +302,49 @@ func (s *TaskService) failTask(
 		WithDuration(time.Since(state.startTime)).
 		WithIterationCount(task.Iterations).
 		WithToolCallCount(state.toolCallCount), nil
+}
+
+// prepareToolCallInputs creates indexed inputs for parallel processing.
+func (s *TaskService) prepareToolCallInputs(toolCalls []ToolCall) []toolCallInput {
+	inputs := make([]toolCallInput, len(toolCalls))
+	for i := range toolCalls {
+		inputs[i] = toolCallInput{index: i, tc: &toolCalls[i]}
+	}
+	return inputs
+}
+
+// runAgentLoop executes the main agent loop until completion or failure.
+func (s *TaskService) runAgentLoop(ctx context.Context, agent *Agent, task *Task, state *taskState) (Result, error) {
+	for agent.CanContinue() {
+		if ctx.Err() != nil {
+			return s.failTask(ctx, task, ErrContextCanceled.Error(), state)
+		}
+
+		agent.IncrementIteration()
+		task.IncrementIterations()
+
+		response, err := s.executeIteration(ctx, agent, task)
+		if err != nil {
+			return s.failTask(ctx, task, err.Error(), state)
+		}
+
+		agent.AddMessage(response.Message)
+
+		if response.HasToolCalls() {
+			state.toolCallCount += s.executeToolCalls(ctx, agent, response.ToolCalls)
+			continue
+		}
+
+		return s.completeTask(ctx, agent, task, response.Message.Content, state)
+	}
+
+	return s.failTask(ctx, task, ErrMaxIterationsReached.Error(), state)
+}
+
+// runBeforeTaskHook executes the before task hook if configured.
+func (s *TaskService) runBeforeTaskHook(ctx context.Context, agent *Agent, task *Task) error {
+	if s.hooks.BeforeTask != nil {
+		return s.hooks.BeforeTask(ctx, agent, task)
+	}
+	return nil
 }

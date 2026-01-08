@@ -2,6 +2,8 @@
 // observe → decide → act → update loop pattern for LLM-based task execution.
 package agent
 
+// ID Types (alphabetically sorted)
+
 // AgentID is the unique identifier for an agent instance.
 // It is a value object that ensures type safety for agent references.
 type AgentID string
@@ -18,34 +20,34 @@ type ToolCallID string
 // It follows the OpenAI chat completion API role convention.
 type Role string
 
-// Standard conversation roles for LLM chat completions.
+// Standard conversation roles for LLM chat completions (alphabetically sorted).
 const (
-	RoleSystem    Role = "system"    // System instructions/prompt
-	RoleUser      Role = "user"      // Human input
 	RoleAssistant Role = "assistant" // LLM response
+	RoleSystem    Role = "system"    // System instructions/prompt
 	RoleTool      Role = "tool"      // Tool execution result
+	RoleUser      Role = "user"      // Human input
 )
 
 // TaskStatus represents the lifecycle state of a task.
 // Tasks transition: Pending → InProgress → Completed/Failed.
 type TaskStatus string
 
-// Task lifecycle states.
+// Task lifecycle states (alphabetically sorted).
 const (
-	TaskStatusPending   TaskStatus = "pending"   // Awaiting execution
-	TaskStatusRunning   TaskStatus = "running"   // Currently running
 	TaskStatusCompleted TaskStatus = "completed" // Finished successfully
 	TaskStatusFailed    TaskStatus = "failed"    // Terminated with error
+	TaskStatusPending   TaskStatus = "pending"   // Awaiting execution
+	TaskStatusRunning   TaskStatus = "running"   // Currently running
 )
 
 // ToolCallStatus represents the execution state of a tool call.
 // Tool calls transition: Pending → Executing → Completed/Failed.
 type ToolCallStatus string
 
-// Tool call execution states.
+// Tool call execution states (alphabetically sorted).
 const (
-	ToolCallStatusPending   ToolCallStatus = "pending"   // Queued for execution
-	ToolCallStatusExecuting ToolCallStatus = "executing" // Currently running
 	ToolCallStatusCompleted ToolCallStatus = "completed" // Finished successfully
+	ToolCallStatusExecuting ToolCallStatus = "executing" // Currently running
 	ToolCallStatusFailed    ToolCallStatus = "failed"    // Terminated with error
+	ToolCallStatusPending   ToolCallStatus = "pending"   // Queued for execution
 )

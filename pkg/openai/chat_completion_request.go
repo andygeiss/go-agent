@@ -2,8 +2,8 @@ package openai
 
 // ChatCompletionRequest represents a request to the chat completions endpoint.
 type ChatCompletionRequest struct {
-	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
+	Model    string    `json:"model"`
 	Tools    []Tool    `json:"tools,omitempty"`
 }
 

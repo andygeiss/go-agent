@@ -2,7 +2,6 @@ package outbound
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -45,24 +44,6 @@ func NewToolExecutor() *ToolExecutor {
 	executor.RegisterTool("calculate", executor.calculate)
 
 	return executor
-}
-
-// WithToolTimeout sets the timeout for tool execution.
-func (e *ToolExecutor) WithToolTimeout(timeout time.Duration) *ToolExecutor {
-	e.toolTimeout = timeout
-	return e
-}
-
-// WithLogger sets an optional structured logger for the executor.
-// When set, the executor logs tool executions at debug level.
-func (e *ToolExecutor) WithLogger(logger *slog.Logger) *ToolExecutor {
-	e.logger = logger
-	return e
-}
-
-// RegisterTool registers a new tool with the executor.
-func (e *ToolExecutor) RegisterTool(name string, fn ToolFunc) {
-	e.tools[name] = fn
 }
 
 // Execute runs the specified tool with the given input arguments.
@@ -123,9 +104,9 @@ func (e *ToolExecutor) GetAvailableTools() []string {
 // GetToolDefinitions returns the tool definitions for the LLM.
 func (e *ToolExecutor) GetToolDefinitions() []agent.ToolDefinition {
 	return []agent.ToolDefinition{
-		agent.NewToolDefinition("get_current_time", "Get the current date and time"),
 		agent.NewToolDefinition("calculate", "Perform a simple arithmetic calculation").
 			WithParameter("expression", "The arithmetic expression to evaluate (e.g., '2 + 2')"),
+		agent.NewToolDefinition("get_current_time", "Get the current date and time"),
 	}
 }
 
@@ -135,9 +116,22 @@ func (e *ToolExecutor) HasTool(toolName string) bool {
 	return ok
 }
 
-// getCurrentTime returns the current date and time.
-func (e *ToolExecutor) getCurrentTime(_ context.Context, _ string) (string, error) {
-	return time.Now().Format(time.RFC3339), nil
+// RegisterTool registers a new tool with the executor.
+func (e *ToolExecutor) RegisterTool(name string, fn ToolFunc) {
+	e.tools[name] = fn
+}
+
+// WithLogger sets an optional structured logger for the executor.
+// When set, the executor logs tool executions at debug level.
+func (e *ToolExecutor) WithLogger(logger *slog.Logger) *ToolExecutor {
+	e.logger = logger
+	return e
+}
+
+// WithToolTimeout sets the timeout for tool execution.
+func (e *ToolExecutor) WithToolTimeout(timeout time.Duration) *ToolExecutor {
+	e.toolTimeout = timeout
+	return e
 }
 
 // calculateArgs represents the arguments for the calculate tool.
@@ -149,7 +143,7 @@ type calculateArgs struct {
 // Supports +, -, *, / operators with proper precedence and parentheses.
 func (e *ToolExecutor) calculate(_ context.Context, arguments string) (string, error) {
 	var args calculateArgs
-	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+	if err := agent.DecodeArgs(arguments, &args); err != nil {
 		return "", fmt.Errorf("failed to parse arguments: %w", err)
 	}
 
@@ -163,6 +157,11 @@ func (e *ToolExecutor) calculate(_ context.Context, arguments string) (string, e
 		return strconv.FormatInt(int64(result), 10), nil
 	}
 	return fmt.Sprintf("%g", result), nil
+}
+
+// getCurrentTime returns the current date and time.
+func (e *ToolExecutor) getCurrentTime(_ context.Context, _ string) (string, error) {
+	return time.Now().Format(time.RFC3339), nil
 }
 
 // evaluateExpression safely evaluates a simple arithmetic expression.
@@ -185,12 +184,6 @@ func evaluateExpression(expr string) (float64, error) {
 type exprParser struct {
 	input string
 	pos   int
-}
-
-func (p *exprParser) skipWhitespace() {
-	for p.pos < len(p.input) && unicode.IsSpace(rune(p.input[p.pos])) {
-		p.pos++
-	}
 }
 
 // parseExpression handles addition and subtraction (lowest precedence).
@@ -221,41 +214,6 @@ func (p *exprParser) parseExpression() (float64, error) {
 			left += right
 		} else {
 			left -= right
-		}
-	}
-}
-
-// parseTerm handles multiplication and division (higher precedence).
-func (p *exprParser) parseTerm() (float64, error) {
-	left, err := p.parseFactor()
-	if err != nil {
-		return 0, err
-	}
-
-	for {
-		p.skipWhitespace()
-		if p.pos >= len(p.input) {
-			return left, nil
-		}
-
-		op := p.input[p.pos]
-		if op != '*' && op != '/' {
-			return left, nil
-		}
-		p.pos++
-
-		right, err := p.parseFactor()
-		if err != nil {
-			return 0, err
-		}
-
-		if op == '*' {
-			left *= right
-		} else {
-			if right == 0 {
-				return 0, errors.New("division by zero")
-			}
-			left /= right
 		}
 	}
 }
@@ -326,4 +284,45 @@ func (p *exprParser) parseNumber() (float64, error) {
 		return 0, fmt.Errorf("invalid number: %s", numStr)
 	}
 	return num, nil
+}
+
+// parseTerm handles multiplication and division (higher precedence).
+func (p *exprParser) parseTerm() (float64, error) {
+	left, err := p.parseFactor()
+	if err != nil {
+		return 0, err
+	}
+
+	for {
+		p.skipWhitespace()
+		if p.pos >= len(p.input) {
+			return left, nil
+		}
+
+		op := p.input[p.pos]
+		if op != '*' && op != '/' {
+			return left, nil
+		}
+		p.pos++
+
+		right, err := p.parseFactor()
+		if err != nil {
+			return 0, err
+		}
+
+		if op == '*' {
+			left *= right
+		} else {
+			if right == 0 {
+				return 0, errors.New("division by zero")
+			}
+			left /= right
+		}
+	}
+}
+
+func (p *exprParser) skipWhitespace() {
+	for p.pos < len(p.input) && unicode.IsSpace(rune(p.input[p.pos])) {
+		p.pos++
+	}
 }

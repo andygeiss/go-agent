@@ -71,9 +71,9 @@ func main() {
 
 	// Create use cases
 	uc := &useCases{
-		sendMessage:       chat.NewSendMessageUseCase(taskService, &agentInstance),
 		clearConversation: chat.NewClearConversationUseCase(&agentInstance),
 		getAgentStats:     chat.NewGetAgentStatsUseCase(&agentInstance),
+		sendMessage:       chat.NewSendMessageUseCase(taskService, &agentInstance),
 	}
 
 	runInteractiveChat(uc, *verbose)
@@ -81,24 +81,24 @@ func main() {
 
 // useCases holds the domain use cases for the CLI.
 type useCases struct {
-	sendMessage       *chat.SendMessageUseCase
 	clearConversation *chat.ClearConversationUseCase
 	getAgentStats     *chat.GetAgentStatsUseCase
+	sendMessage       *chat.SendMessageUseCase
 }
 
 // handleCommand processes special commands. Returns true if a command was handled,
 // and a second bool indicating if the loop should break.
 func handleCommand(input string, uc *useCases) (bool, bool) {
 	switch input {
-	case "quit", "exit":
-		printFinalStats(uc.getAgentStats)
-		fmt.Println("Goodbye! 👋")
-		return true, true
 	case "clear":
 		uc.clearConversation.Execute()
 		fmt.Println("🗑️  Conversation cleared.")
 		fmt.Println()
 		return true, false
+	case "quit", "exit":
+		printFinalStats(uc.getAgentStats)
+		fmt.Println("Goodbye! 👋")
+		return true, true
 	case "stats":
 		printAgentStats(uc.getAgentStats)
 		return true, false

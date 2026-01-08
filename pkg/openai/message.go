@@ -2,8 +2,8 @@ package openai
 
 // Message represents a message in the chat completion request/response.
 type Message struct {
-	Role       string     `json:"role"`
 	Content    string     `json:"content"`
+	Role       string     `json:"role"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 }

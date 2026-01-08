@@ -3,16 +3,16 @@ package agent
 // LLMResponse represents the response from an LLM.
 // It contains the assistant message and any tool calls requested.
 type LLMResponse struct {
-	Message      Message    // The response message from the LLM
 	FinishReason string     // Why the LLM stopped (e.g., "stop", "tool_calls")
+	Message      Message    // The response message from the LLM
 	ToolCalls    []ToolCall // Tool calls requested by the LLM
 }
 
 // NewLLMResponse creates a new LLMResponse with the given message and finish reason.
 func NewLLMResponse(message Message, finishReason string) LLMResponse {
 	return LLMResponse{
-		Message:      message,
 		FinishReason: finishReason,
+		Message:      message,
 		ToolCalls:    make([]ToolCall, 0),
 	}
 }

@@ -8,12 +8,12 @@ import (
 type AgentStats struct {
 	AgentID        string
 	Model          string
-	MessageCount   int
-	TaskCount      int
 	CompletedTasks int
 	FailedTasks    int
 	MaxIterations  int
 	MaxMessages    int
+	MessageCount   int
+	TaskCount      int
 }
 
 // GetAgentStatsUseCase handles retrieving agent statistics.
