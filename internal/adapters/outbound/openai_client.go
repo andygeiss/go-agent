@@ -8,9 +8,21 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
+	"github.com/andygeiss/cloud-native-utils/service"
+	"github.com/andygeiss/cloud-native-utils/stability"
 	"github.com/andygeiss/go-agent/pkg/agent"
 	"github.com/andygeiss/go-agent/pkg/openai"
+)
+
+// Default configuration for LLM client resilience.
+const (
+	defaultHTTPTimeout   = 60 * time.Second  // HTTP client timeout
+	defaultLLMTimeout    = 120 * time.Second // LLM call timeout (longer for complex prompts)
+	defaultRetryAttempts = 3                 // Number of retry attempts
+	defaultRetryDelay    = 2 * time.Second   // Delay between retries
+	defaultBreakerThresh = 5                 // Circuit breaker failure threshold
 )
 
 // The adapter translates between domain types (agent.Message, agent.ToolCall)
@@ -18,39 +30,98 @@ import (
 
 // OpenAIClient implements the agent.LLMClient interface.
 // It communicates with LM Studio using the OpenAI-compatible API.
+// It wraps LLM calls with resilience patterns (timeout, retry, circuit breaker).
 type OpenAIClient struct {
-	httpClient *http.Client
-	baseURL    string
-	model      string
+	httpClient    *http.Client
+	baseURL       string
+	model         string
+	llmTimeout    time.Duration
+	retryAttempts int
+	retryDelay    time.Duration
+	breakerThresh int
 }
 
-// NewOpenAIClient creates a new LMStudioClient instance.
+// NewOpenAIClient creates a new OpenAIClient instance with sensible defaults.
+// The client is configured with:
+// - HTTP timeout: 60s.
+// - LLM call timeout: 120s.
+// - Retry: 3 attempts with 2s delay.
+// - Circuit breaker: opens after 5 consecutive failures.
 func NewOpenAIClient(baseURL, model string) *OpenAIClient {
 	return &OpenAIClient{
-		baseURL:    baseURL,
-		model:      model,
-		httpClient: &http.Client{},
+		baseURL: baseURL,
+		model:   model,
+		httpClient: &http.Client{
+			Timeout: defaultHTTPTimeout,
+		},
+		llmTimeout:    defaultLLMTimeout,
+		retryAttempts: defaultRetryAttempts,
+		retryDelay:    defaultRetryDelay,
+		breakerThresh: defaultBreakerThresh,
 	}
 }
 
-// WithHTTPClient sets a custom HTTP client for the LMStudioClient.
+// WithHTTPClient sets a custom HTTP client for the OpenAIClient.
 func (c *OpenAIClient) WithHTTPClient(httpClient *http.Client) *OpenAIClient {
 	c.httpClient = httpClient
 	return c
 }
 
+// WithLLMTimeout sets the timeout for LLM calls.
+func (c *OpenAIClient) WithLLMTimeout(timeout time.Duration) *OpenAIClient {
+	c.llmTimeout = timeout
+	return c
+}
+
+// WithRetry configures retry behavior for transient failures.
+func (c *OpenAIClient) WithRetry(attempts int, delay time.Duration) *OpenAIClient {
+	c.retryAttempts = attempts
+	c.retryDelay = delay
+	return c
+}
+
+// WithCircuitBreaker configures the circuit breaker threshold.
+func (c *OpenAIClient) WithCircuitBreaker(threshold int) *OpenAIClient {
+	c.breakerThresh = threshold
+	return c
+}
+
+// llmInput bundles the inputs for an LLM call.
+type llmInput struct {
+	messages []agent.Message
+	tools    []agent.ToolDefinition
+}
+
 // Run sends the conversation messages to LM Studio and returns the response.
 // It translates between domain types and the OpenAI-compatible API format.
+// The call is wrapped with resilience patterns:
+// - Timeout: prevents hanging on slow responses.
+// - Retry: handles transient network failures.
+// - Circuit Breaker: prevents cascading failures when LLM is down.
 func (c *OpenAIClient) Run(ctx context.Context, messages []agent.Message, tools []agent.ToolDefinition) (agent.LLMResponse, error) {
-	apiMessages := c.convertToAPIMessages(messages)
-	apiTools := c.convertToAPITools(tools)
+	// Create the base function that performs the actual LLM call
+	baseFn := func(ctx context.Context, in llmInput) (agent.LLMResponse, error) {
+		apiMessages := c.convertToAPIMessages(in.messages)
+		apiTools := c.convertToAPITools(in.tools)
 
-	respPayload, err := c.sendRequest(ctx, apiMessages, apiTools)
-	if err != nil {
-		return agent.LLMResponse{}, err
+		respPayload, err := c.sendRequest(ctx, apiMessages, apiTools)
+		if err != nil {
+			return agent.LLMResponse{}, err
+		}
+
+		return c.convertToResponse(respPayload)
 	}
 
-	return c.convertToResponse(respPayload)
+	// Wrap with stability patterns (innermost to outermost):
+	// 1. Timeout - enforce maximum execution time
+	// 2. Retry - handle transient failures
+	// 3. Circuit Breaker - prevent cascading failures
+	var fn service.Function[llmInput, agent.LLMResponse] = baseFn
+	fn = stability.Timeout(fn, c.llmTimeout)
+	fn = stability.Retry(fn, c.retryAttempts, c.retryDelay)
+	fn = stability.Breaker(fn, c.breakerThresh)
+
+	return fn(ctx, llmInput{messages: messages, tools: tools})
 }
 
 // convertToAPIMessages converts domain messages to API format.
