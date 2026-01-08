@@ -117,16 +117,16 @@ go-agent/
 
 | Command | Description |
 |---------|-------------|
-| `just setup` | Install dependencies (golangci-lint, just) |
-| `just fmt` | Format Go code |
-| `just lint` | Run linter checks |
-| `just test` | Run unit tests with coverage |
-| `just test-integration` | Run integration tests (requires LM Studio) |
-| `just run` | Run CLI application locally |
 | `just bench` | Run performance benchmarks |
 | `just build` | Build Docker image |
-| `just up` | Start all services (build + docker-compose) |
 | `just down` | Stop all services |
+| `just fmt` | Format Go code |
+| `just lint` | Run linter checks |
+| `just run` | Run CLI application locally |
+| `just setup` | Install dependencies (golangci-lint, just) |
+| `just test` | Run unit tests with coverage |
+| `just test-integration` | Run integration tests (requires LM Studio) |
+| `just up` | Start all services (build + docker-compose) |
 
 ## Configuration
 

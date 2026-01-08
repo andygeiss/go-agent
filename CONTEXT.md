@@ -462,16 +462,16 @@ messages, err := encStore.Load(ctx, agentID)
 
 | Command | Description |
 |---------|-------------|
-| `just setup` | Install development dependencies |
-| `just fmt` | Format Go code |
-| `just lint` | Run linter checks |
-| `just test` | Run unit tests with coverage |
-| `just test-integration` | Run integration tests (requires LM Studio) |
-| `just run` | Run CLI application locally |
 | `just bench` | Run performance benchmarks |
 | `just build` | Build Docker image |
-| `just up` | Start services with docker-compose |
 | `just down` | Stop services |
+| `just fmt` | Format Go code |
+| `just lint` | Run linter checks |
+| `just run` | Run CLI application locally |
+| `just setup` | Install development dependencies |
+| `just test` | Run unit tests with coverage |
+| `just test-integration` | Run integration tests (requires LM Studio) |
+| `just up` | Start services with docker-compose |
 
 ### Environment Configuration
 
