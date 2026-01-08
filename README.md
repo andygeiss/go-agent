@@ -11,7 +11,7 @@
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/85ef3344ec784fe9b8dd9052e6172b5d)](https://app.codacy.com/gh/andygeiss/go-agent/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 [![Codacy Badge](https://app.codacy.com/project/badge/Coverage/85ef3344ec784fe9b8dd9052e6172b5d)](https://app.codacy.com/gh/andygeiss/go-agent/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_coverage)
 
-A Go-based AI Agent library implementing the **Observe → Decide → Act → Update** loop pattern to interact with Large Language Models (LLMs) and execute tools.
+A **production-ready** Go library implementing the **Observe → Decide → Act → Update** loop pattern for building LLM-powered applications. Features hexagonal architecture, comprehensive test coverage (~78%), performance benchmarks, and enterprise-grade patterns including encryption, persistence, and resilience.
 
 ## Features
 

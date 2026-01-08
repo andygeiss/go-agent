@@ -6,12 +6,17 @@ This document serves as the authoritative project context for AI coding agents, 
 
 ## 1. Project Purpose
 
-Go Agent is a reusable Go library that implements the **Observe → Decide → Act → Update** loop pattern for building LLM-powered applications. It provides:
+Go Agent is a **production-ready** Go library that implements the **Observe → Decide → Act → Update** loop pattern for building LLM-powered applications. It provides:
 
 - A domain-driven agent framework with typed entities (Agent, Task, Message, ToolCall)
 - Port/adapter architecture for pluggable LLM clients and tool executors
 - Event-driven observability through domain events
 - Lifecycle hooks for cross-cutting concerns (logging, metrics, authorization)
+- Parallel tool execution for improved performance with I/O-bound operations
+- Conversation persistence with in-memory and JSON file storage backends
+- AES-GCM encryption for sensitive conversation data at rest
+- Resilience patterns (timeout, retry, circuit breaker, debounce, throttle)
+- Comprehensive test coverage (~78%) with performance benchmarks
 
 The library is designed to be imported and extended, with a reference CLI application demonstrating integration with LM Studio (OpenAI-compatible API).
 
