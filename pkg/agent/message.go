@@ -3,10 +3,10 @@ package agent
 // Message represents a single message in a conversation.
 // It follows the OpenAI chat completion message format.
 type Message struct {
-	ToolCallID ToolCallID
-	Content    string
-	Role       Role
-	ToolCalls  []ToolCall
+	ToolCallID ToolCallID `json:"tool_call_id,omitempty"`
+	Content    string     `json:"content"`
+	Role       Role       `json:"role"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 }
 
 // NewMessage creates a new Message with the given role and content.

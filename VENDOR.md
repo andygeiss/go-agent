@@ -19,11 +19,14 @@ This document catalogs the external vendor libraries used in this project, expla
 | Package | Description | Used In |
 |---------|-------------|---------|
 | `assert` | Minimal test assertion helper | All `*_test.go` files |
+| `efficiency` | Parallel processing (Generate, Process) | `pkg/agent/task_service.go` |
 | `logging` | Structured JSON logging via `log/slog` | `adapters/outbound/openai_client.go`, `adapters/outbound/tool_executor.go` |
 | `messaging` | Message dispatcher for event publishing | `adapters/outbound/event_publisher.go` |
+| `resource` | Generic CRUD storage (InMemory, JsonFile, etc.) | `adapters/outbound/conversation_store.go` |
+| `security` | AES-GCM encryption for data at rest | `adapters/outbound/encrypted_conversation_store.go` |
 | `service` | Context-aware function type `Function[IN, OUT]` | `adapters/outbound/openai_client.go`, `adapters/outbound/tool_executor.go` |
 | `slices` | Generic slice utilities (Filter, Map, Unique, etc.) | `pkg/agent/agent.go`, `pkg/agent/tool_definition.go`, `adapters/outbound/openai_client.go` |
-| `stability` | Resilience patterns (timeout, retry, circuit breaker) | `adapters/outbound/openai_client.go`, `adapters/outbound/tool_executor.go` |
+| `stability` | Resilience patterns (timeout, retry, circuit breaker, debounce) | `adapters/outbound/openai_client.go`, `adapters/outbound/tool_executor.go` |
 
 #### When to Use
 
@@ -31,7 +34,10 @@ This document catalogs the external vendor libraries used in this project, expla
 - **Structured logging**: Use `logging.NewJsonLogger()` for JSON-formatted logs with level control
 - **Event publishing**: Use `messaging.Dispatcher` for publishing domain events
 - **Slice transformations**: Use `slices.Filter`, `slices.Map`, `slices.Unique` for collection operations
-- **Resilience patterns**: Use `stability.Timeout`, `stability.Retry`, `stability.Breaker` for external API calls
+- **Resilience patterns**: Use `stability.Timeout`, `stability.Retry`, `stability.Breaker`, `stability.Debounce` for external API calls
+- **Parallel processing**: Use `efficiency.Generate`, `efficiency.Process` for concurrent workloads
+- **Conversation persistence**: Use `resource.Access` with `InMemoryAccess`, `JsonFileAccess`, or `SqliteAccess`
+- **Encryption at rest**: Use `security.Encrypt/Decrypt` with AES-GCM for sensitive data
 - **Context-aware functions**: Use `service.Function[IN, OUT]` as the universal function signature
 
 #### When NOT to Use
@@ -40,6 +46,7 @@ This document catalogs the external vendor libraries used in this project, expla
 - Don't create new function signatures — align with `service.Function[IN, OUT]`
 - Don't use external logging libraries (logrus, zap) — use `log/slog` via `logging.NewJsonLogger()`
 - Don't write manual filter/map loops — use `slices.Filter`, `slices.Map` instead
+- Don't implement custom storage backends — use `resource.Access` implementations
 
 #### Integration Patterns
 
@@ -164,14 +171,103 @@ slices.IndexOf(slice, element)      // Find element index (-1 if not found)
 slices.Copy(slice)                  // Shallow copy
 ```
 
+**Debounce (used in OpenAIClient):**
+
+```go
+import "github.com/andygeiss/cloud-native-utils/stability"
+
+// Debounce coalesces rapid successive calls within a time window
+// Useful for reducing API calls when input changes rapidly
+client := outbound.NewOpenAIClient(baseURL, model).
+    WithDebounce(500 * time.Millisecond)
+```
+
+**Parallel tool execution (used in TaskService):**
+
+```go
+import (
+    "github.com/andygeiss/cloud-native-utils/efficiency"
+    "github.com/andygeiss/cloud-native-utils/service"
+)
+
+// Enable parallel tool execution (uses CPU-count workers)
+taskService := agent.NewTaskService(llm, executor, publisher).
+    WithParallelToolExecution()
+
+// Manual parallel processing pattern:
+// 1. Generate channel from values
+inCh := efficiency.Generate(toolCalls...)
+
+// 2. Process with worker pool (runtime.NumCPU() workers)
+processFn := func(ctx context.Context, tc ToolCall) (Result, error) {
+    return executeToolCall(ctx, tc)
+}
+outCh, errCh := efficiency.Process(inCh, processFn)
+
+// 3. Collect results
+for result := range outCh {
+    results = append(results, result)
+}
+```
+
+**Conversation persistence (used in ConversationStore):**
+
+```go
+import "github.com/andygeiss/cloud-native-utils/resource"
+
+// In-memory storage (for testing)
+store := outbound.NewInMemoryConversationStore()
+
+// JSON file storage (for persistence)
+store := outbound.NewJsonFileConversationStore("conversations.json")
+
+// Generic Access interface:
+// - Create(ctx, key, value) error
+// - Read(ctx, key) (*V, error)
+// - ReadAll(ctx) ([]V, error)
+// - Update(ctx, key, value) error
+// - Delete(ctx, key) error
+
+// Save/Load conversation history
+_ = store.Save(ctx, agentID, messages)
+messages, _ := store.Load(ctx, agentID)
+_ = store.Clear(ctx, agentID)
+```
+
+**Encryption at rest (used in EncryptedConversationStore):**
+
+```go
+import "github.com/andygeiss/cloud-native-utils/security"
+
+// Generate a 32-byte AES key (store securely!)
+key := security.GenerateKey()
+
+// Or load from environment variable (hex-encoded 32-byte key)
+key := security.Getenv("ENCRYPTION_KEY")
+
+// Encrypt plaintext
+ciphertext := security.Encrypt([]byte("sensitive data"), key)
+
+// Decrypt ciphertext
+plaintext, err := security.Decrypt(ciphertext, key)
+
+// Password hashing (bcrypt, cost 14)
+hash, err := security.Password([]byte("p@ssw0rd"))
+ok := security.IsPasswordValid(hash, []byte("p@ssw0rd"))
+
+// Encrypted conversation store wrapper
+baseStore := outbound.NewJsonFileConversationStore("conversations.json")
+encryptedStore := outbound.NewEncryptedConversationStore(baseStore, key)
+_ = encryptedStore.Save(ctx, agentID, messages)
+messages, _ = encryptedStore.Load(ctx, agentID)
+```
+
 #### Available But Not Currently Used
 
 The library offers many other packages that could be useful for future features:
 
 | Package | Potential Use Case |
 |---------|-------------------|
-| `security` | AES encryption, password hashing if needed |
-| `stability.Debounce` | Coalescing rapid successive calls |
 
 ---
 

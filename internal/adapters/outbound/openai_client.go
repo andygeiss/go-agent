@@ -28,6 +28,7 @@ const (
 	defaultThrottleTokens = 0                 // Throttle disabled by default (0 = no limit)
 	defaultThrottleRefill = 1                 // Tokens to refill per period
 	defaultThrottlePeriod = time.Second       // Refill period
+	defaultDebouncePeriod = 0                 // Debounce disabled by default (0 = no debounce)
 )
 
 // The adapter translates between domain types (agent.Message, agent.ToolCall)
@@ -44,6 +45,7 @@ type OpenAIClient struct {
 	llmTimeout     time.Duration
 	retryDelay     time.Duration
 	throttlePeriod time.Duration
+	debouncePeriod time.Duration
 	retryAttempts  int
 	breakerThresh  int
 	throttleTokens uint
@@ -57,6 +59,7 @@ type OpenAIClient struct {
 // - Retry: 3 attempts with 2s delay.
 // - Circuit breaker: opens after 5 consecutive failures.
 // - Throttle: disabled by default (set via WithThrottle).
+// - Debounce: disabled by default (set via WithDebounce).
 func NewOpenAIClient(baseURL, model string) *OpenAIClient {
 	return &OpenAIClient{
 		baseURL: baseURL,
@@ -71,6 +74,7 @@ func NewOpenAIClient(baseURL, model string) *OpenAIClient {
 		throttleTokens: defaultThrottleTokens,
 		throttleRefill: defaultThrottleRefill,
 		throttlePeriod: defaultThrottlePeriod,
+		debouncePeriod: defaultDebouncePeriod,
 	}
 }
 
@@ -118,6 +122,18 @@ func (c *OpenAIClient) WithThrottle(maxTokens, refill uint, period time.Duration
 	return c
 }
 
+// WithDebounce configures debouncing to coalesce rapid successive LLM calls.
+// Multiple calls within the duration will result in only one actual LLM call,
+// with all callers receiving the same response.
+// This is useful for:
+// - Rapid typing scenarios where you want to wait for input to settle.
+// - Preventing duplicate requests from multiple UI components.
+// Set period to 0 to disable debouncing (default).
+func (c *OpenAIClient) WithDebounce(period time.Duration) *OpenAIClient {
+	c.debouncePeriod = period
+	return c
+}
+
 // llmInput bundles the inputs for an LLM call.
 type llmInput struct {
 	messages []agent.Message
@@ -159,12 +175,16 @@ func (c *OpenAIClient) Run(ctx context.Context, messages []agent.Message, tools 
 	// 2. Retry - handle transient failures
 	// 3. Circuit Breaker - prevent cascading failures
 	// 4. Throttle - rate limit API calls (if enabled)
+	// 5. Debounce - coalesce rapid calls (if enabled)
 	var fn service.Function[llmInput, agent.LLMResponse] = baseFn
 	fn = stability.Timeout(fn, c.llmTimeout)
 	fn = stability.Retry(fn, c.retryAttempts, c.retryDelay)
 	fn = stability.Breaker(fn, c.breakerThresh)
 	if c.throttleTokens > 0 {
 		fn = stability.Throttle(fn, c.throttleTokens, c.throttleRefill, c.throttlePeriod)
+	}
+	if c.debouncePeriod > 0 {
+		fn = stability.Debounce(fn, c.debouncePeriod)
 	}
 
 	response, err := fn(ctx, llmInput{messages: messages, tools: tools})

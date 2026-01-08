@@ -18,6 +18,9 @@ A Go-based AI Agent library implementing the **Observe → Decide → Act → Up
 - **Reusable Library** - Import `pkg/agent` to build LLM-powered applications
 - **LLM Integration** - OpenAI-compatible API support (works with LM Studio, OpenAI, etc.)
 - **Tool Calling** - Extensible tool system with typed parameter definitions
+- **Parallel Tool Execution** - Execute multiple tool calls concurrently for improved performance
+- **Conversation Persistence** - Save and restore conversation history with pluggable storage backends
+- **Encryption at Rest** - AES-GCM encryption for sensitive conversation data
 - **Event-Driven** - Domain events for observability and extensibility
 - **Hooks/Middleware** - Lifecycle callbacks for logging, metrics, authorization
 - **Functional Options** - Clean configuration with `With*` option functions
@@ -192,6 +195,9 @@ hooks := agent.NewHooks().
     })
 taskService.WithHooks(hooks)
 
+// Optional: Enable parallel tool execution
+taskService.WithParallelToolExecution()
+
 // Create agent with options
 ag := agent.NewAgent("my-agent", "You are a helpful assistant",
     agent.WithMaxIterations(20),
@@ -248,6 +254,21 @@ toolDef := agent.NewToolDefinition("my_tool", "Description of my tool").
         WithDefault("10"))
 ```
 
+### Parallel Tool Execution
+
+When the LLM returns multiple tool calls in a single response, execute them concurrently:
+
+```go
+// Enable parallel execution for improved performance with I/O-bound tools
+taskService := agent.NewTaskService(llmClient, toolExecutor, publisher).
+    WithParallelToolExecution()
+
+// Without parallel execution: tools run sequentially (default)
+// With parallel execution: tools run concurrently using efficiency.Process
+```
+
+**Note**: Parallel execution provides significant benefits for I/O-bound tools (API calls, file operations) but adds coordination overhead for CPU-bound operations.
+
 ### Error Handling
 
 The library provides typed errors for robust error handling:
@@ -293,6 +314,54 @@ hooks := agent.NewHooks().
 taskService.WithHooks(hooks)
 ```
 
+### Conversation Persistence
+
+Save and restore conversation history with pluggable storage backends:
+
+```go
+import (
+    "github.com/andygeiss/go-agent/internal/adapters/outbound"
+)
+
+// In-memory storage (for testing)
+store := outbound.NewInMemoryConversationStore()
+
+// JSON file storage (for production)
+store := outbound.NewJsonFileConversationStore("conversations.json")
+
+// Save conversation
+ctx := context.Background()
+err := store.Save(ctx, agent.AgentID("my-agent"), messages)
+
+// Load conversation
+messages, err := store.Load(ctx, agent.AgentID("my-agent"))
+
+// Clear conversation
+err := store.Clear(ctx, agent.AgentID("my-agent"))
+```
+
+### Encrypted Storage
+
+Protect sensitive conversation data with AES-GCM encryption:
+
+```go
+import (
+    "github.com/andygeiss/cloud-native-utils/security"
+    "github.com/andygeiss/go-agent/internal/adapters/outbound"
+)
+
+// Generate a 32-byte encryption key (store securely!)
+key := security.GenerateKey()
+
+// Create encrypted store
+baseStore := outbound.NewJsonFileConversationStore("conversations.json")
+encStore := outbound.NewEncryptedConversationStore(baseStore, key)
+
+// Use like any ConversationStore - encryption/decryption is automatic
+err := encStore.Save(ctx, agentID, messages)
+messages, err := encStore.Load(ctx, agentID)
+```
+
 ## Testing
 
 ```bash
@@ -304,7 +373,26 @@ go test -v ./internal/...
 
 # Run integration tests (requires LM Studio running)
 just test-integration
+
+# Run benchmarks
+go test -bench=. -benchmem ./pkg/agent/
 ```
+
+### Benchmarks
+
+Performance benchmarks for core operations:
+
+| Benchmark | Time/op | Allocs/op |
+|-----------|---------|-----------|
+| `DirectCompletion` | ~500ns | 11 |
+| `SingleToolCall` | ~727ns | 17 |
+| `MultipleToolCalls_Sequential` | ~925ns | 20 |
+| `MultipleToolCalls_Parallel` | ~8.7µs | 44 |
+| `Message_Create` | ~2ns | 0 |
+| `Agent_Create` | ~45ns | 2 |
+| `Event_Create` | ~1.6ns | 0 |
+
+*Measured on Apple M4 Pro. Parallel execution shows higher overhead in synthetic benchmarks but provides real benefits with I/O-bound tool operations.*
 
 ## Docker
 

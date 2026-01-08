@@ -26,6 +26,9 @@ The library is designed to be imported and extended, with a reference CLI applic
 | Testing | `testing` + `github.com/andygeiss/cloud-native-utils/assert` |
 | Event Bus | `github.com/andygeiss/cloud-native-utils/messaging` |
 | Resilience | `github.com/andygeiss/cloud-native-utils/stability` |
+| Concurrency | `github.com/andygeiss/cloud-native-utils/efficiency` |
+| Persistence | `github.com/andygeiss/cloud-native-utils/resource` |
+| Security | `github.com/andygeiss/cloud-native-utils/security` |
 | Logging | `log/slog` via `github.com/andygeiss/cloud-native-utils/logging` |
 | Slice Utils | `github.com/andygeiss/cloud-native-utils/slices` |
 | HTTP | Standard library `net/http` |
@@ -93,9 +96,11 @@ go-agent/
 ├── internal/
 │   ├── adapters/
 │   │   └── outbound/           # Infrastructure adapters
-│   │       ├── openai_client.go      # LLMClient implementation
-│   │       ├── tool_executor.go      # ToolExecutor implementation
-│   │       └── event_publisher.go    # EventPublisher implementation
+│   │       ├── openai_client.go              # LLMClient implementation
+│   │       ├── tool_executor.go              # ToolExecutor implementation
+│   │       ├── event_publisher.go            # EventPublisher implementation
+│   │       ├── conversation_store.go         # ConversationStore implementation
+│   │       └── encrypted_conversation_store.go # Encrypted storage wrapper
 │   └── domain/
 │       └── chat/               # Chat domain use cases
 │           ├── ports.go              # Domain-specific ports
@@ -115,7 +120,8 @@ go-agent/
 │   │   ├── result.go           # Task execution result with metrics
 │   │   ├── errors.go           # Typed errors (LLMError, ToolError, TaskError)
 │   │   ├── hooks.go            # Lifecycle hooks/middleware
-│   │   ├── ports.go            # LLMClient, ToolExecutor, EventPublisher interfaces
+│   │   ├── ports.go            # LLMClient, ToolExecutor, EventPublisher, ConversationStore interfaces
+│   │   ├── benchmark_test.go   # Performance benchmarks
 │   │   └── events/             # Domain events
 │   │       └── events.go       # TaskStarted, TaskCompleted, ToolCallExecuted
 │   ├── event/                  # Event infrastructure interfaces
@@ -262,6 +268,7 @@ Located in `pkg/agent/ports.go`:
 | `LLMClient` | Send messages to LLM, get responses | `OpenAIClient` |
 | `ToolExecutor` | Register and execute tools | `ToolExecutor` |
 | `EventPublisher` | Publish domain events | `EventPublisher` |
+| `ConversationStore` | Persist and load conversation history | `ConversationStore`, `EncryptedConversationStore` |
 
 ### Hooks/Middleware
 
@@ -320,7 +327,10 @@ See [VENDOR.md](VENDOR.md) for approved vendor libraries and usage patterns. Key
 
 - Use `cloud-native-utils/assert` for testing assertions
 - Use `cloud-native-utils/messaging` for event publishing
-- Use `cloud-native-utils/stability` for resilience patterns
+- Use `cloud-native-utils/stability` for resilience patterns (Timeout, Retry, Breaker, Debounce)
+- Use `cloud-native-utils/efficiency` for parallel processing (Generate, Process)
+- Use `cloud-native-utils/resource` for persistent storage (Access interface)
+- Use `cloud-native-utils/security` for encryption (AES-GCM)
 - Use `cloud-native-utils/slices` for Filter/Map/Unique operations
 - Prefer Go standard library for HTTP, JSON, context
 
@@ -449,7 +459,6 @@ go run ./cmd/cli \
 
 - Single-agent design (no multi-agent orchestration)
 - Synchronous execution (no async tool calls)
-- In-memory conversation state (no persistence layer)
 - Demo tools only (real tools require implementation)
 
 ### Technical Debt

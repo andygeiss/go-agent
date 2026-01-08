@@ -31,3 +31,14 @@ type EventPublisher interface {
 	// Publish sends an event to subscribers.
 	Publish(ctx context.Context, e event.Event) error
 }
+
+// ConversationStore is the interface for persisting conversation history.
+// Implementations can use in-memory, JSON file, or database storage.
+type ConversationStore interface {
+	// Save persists the conversation history for an agent.
+	Save(ctx context.Context, agentID AgentID, messages []Message) error
+	// Load retrieves the conversation history for an agent.
+	Load(ctx context.Context, agentID AgentID) ([]Message, error)
+	// Clear removes the conversation history for an agent.
+	Clear(ctx context.Context, agentID AgentID) error
+}

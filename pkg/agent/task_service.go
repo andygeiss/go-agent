@@ -2,8 +2,11 @@ package agent
 
 import (
 	"context"
+	"sync"
 	"time"
 
+	"github.com/andygeiss/cloud-native-utils/efficiency"
+	"github.com/andygeiss/cloud-native-utils/service"
 	"github.com/andygeiss/go-agent/pkg/agent/events"
 )
 
@@ -14,6 +17,7 @@ type TaskService struct {
 	toolExecutor   ToolExecutor
 	eventPublisher EventPublisher
 	hooks          Hooks
+	parallelTools  bool
 }
 
 // NewTaskService creates a new TaskService with the given dependencies.
@@ -29,6 +33,16 @@ func NewTaskService(llm LLMClient, executor ToolExecutor, publisher EventPublish
 // WithHooks sets the hooks for the task service.
 func (s *TaskService) WithHooks(hooks Hooks) *TaskService {
 	s.hooks = hooks
+	return s
+}
+
+// WithParallelToolExecution enables parallel execution of tool calls.
+// When enabled, multiple tool calls from a single LLM response are
+// executed concurrently using a worker pool. This can significantly
+// improve performance when tools are I/O bound (e.g., API calls).
+// Default is sequential execution.
+func (s *TaskService) WithParallelToolExecution() *TaskService {
+	s.parallelTools = true
 	return s
 }
 
@@ -141,7 +155,16 @@ func (s *TaskService) buildMessages(agent *Agent) []Message {
 
 // executeToolCalls runs each tool call and adds results to conversation.
 // Returns the number of tool calls executed.
+// If parallelTools is enabled, tool calls are executed concurrently.
 func (s *TaskService) executeToolCalls(ctx context.Context, agent *Agent, toolCalls []ToolCall) int {
+	if s.parallelTools && len(toolCalls) > 1 {
+		return s.executeToolCallsParallel(ctx, agent, toolCalls)
+	}
+	return s.executeToolCallsSequential(ctx, agent, toolCalls)
+}
+
+// executeToolCallsSequential runs tool calls one at a time (default behavior).
+func (s *TaskService) executeToolCallsSequential(ctx context.Context, agent *Agent, toolCalls []ToolCall) int {
 	count := 0
 	for i := range toolCalls {
 		tc := &toolCalls[i]
@@ -182,6 +205,124 @@ func (s *TaskService) executeToolCalls(ctx context.Context, agent *Agent, toolCa
 		count++
 	}
 	return count
+}
+
+// toolCallInput bundles the data needed for parallel tool execution.
+type toolCallInput struct {
+	tc    *ToolCall
+	index int
+}
+
+// toolCallOutput holds the result of a parallel tool execution.
+type toolCallOutput struct {
+	tc    *ToolCall
+	index int
+}
+
+// executeToolCallsParallel runs tool calls concurrently using the efficiency package.
+// Results are collected and added to the agent in the original order.
+func (s *TaskService) executeToolCallsParallel(ctx context.Context, agent *Agent, toolCalls []ToolCall) int {
+	// Generate channel from tool calls
+	inCh := efficiency.Generate(s.prepareToolCallInputs(toolCalls)...)
+
+	// Process tool calls in parallel
+	outCh, errCh := efficiency.Process(inCh, s.createToolCallProcessor(ctx, agent))
+
+	// Collect and publish results
+	return s.collectAndPublishResults(ctx, agent, toolCalls, outCh, errCh)
+}
+
+// createToolCallProcessor returns a function that processes a single tool call.
+func (s *TaskService) createToolCallProcessor(ctx context.Context, agent *Agent) service.Function[toolCallInput, toolCallOutput] {
+	return func(_ context.Context, input toolCallInput) (toolCallOutput, error) {
+		tc := input.tc
+
+		// Run before tool call hook
+		if s.hooks.BeforeToolCall != nil {
+			if err := s.hooks.BeforeToolCall(ctx, agent, tc); err != nil {
+				tc.Fail(err.Error())
+				return toolCallOutput{tc: tc, index: input.index}, nil
+			}
+		}
+
+		tc.Execute()
+
+		result, err := s.toolExecutor.Execute(ctx, tc.Name, tc.Arguments)
+		if err != nil {
+			tc.Fail(err.Error())
+		} else {
+			tc.Complete(result)
+		}
+
+		// Run after tool call hook
+		if s.hooks.AfterToolCall != nil {
+			_ = s.hooks.AfterToolCall(ctx, agent, tc)
+		}
+
+		return toolCallOutput{tc: tc, index: input.index}, nil
+	}
+}
+
+// collectAndPublishResults gathers parallel results and adds messages in original order.
+func (s *TaskService) collectAndPublishResults(
+	ctx context.Context,
+	agent *Agent,
+	toolCalls []ToolCall,
+	outCh <-chan toolCallOutput,
+	errCh <-chan error,
+) int {
+	// Collect results
+	results := make([]toolCallOutput, 0, len(toolCalls))
+	var mu sync.Mutex
+
+	// Drain output channel
+	for out := range outCh {
+		mu.Lock()
+		results = append(results, out)
+		mu.Unlock()
+	}
+
+	// Check for errors (non-blocking)
+	select {
+	case err := <-errCh:
+		_ = err // Individual tool failures are handled in the processor
+	default:
+	}
+
+	// Sort results by original index and add messages in order
+	sortedResults := make([]*ToolCall, len(toolCalls))
+	for _, r := range results {
+		sortedResults[r.index] = r.tc
+	}
+
+	count := 0
+	for _, tc := range sortedResults {
+		if tc == nil {
+			continue
+		}
+
+		// Publish tool call executed event
+		_ = s.eventPublisher.Publish(ctx, events.NewEventToolCallExecuted(
+			string(tc.ID),
+			tc.Name,
+			tc.Result,
+			tc.Error,
+		))
+
+		agent.AddMessage(tc.ToMessage())
+		count++
+	}
+
+	return count
+}
+
+// prepareToolCallInputs creates indexed inputs for parallel processing.
+func (s *TaskService) prepareToolCallInputs(toolCalls []ToolCall) []toolCallInput {
+	inputs := make([]toolCallInput, len(toolCalls))
+	for i := range toolCalls {
+		inputs[i] = toolCallInput{index: i, tc: &toolCalls[i]}
+	}
+	return inputs
 }
 
 // failTask marks the task as failed and publishes the event.

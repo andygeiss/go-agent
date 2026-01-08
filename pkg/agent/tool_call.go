@@ -3,12 +3,12 @@ package agent
 // ToolCall represents a tool invocation requested by the LLM.
 // It tracks the tool name, arguments, and execution result.
 type ToolCall struct {
-	ID        ToolCallID     // Unique identifier for this call
-	Name      string         // Name of the tool to execute
-	Arguments string         // JSON-encoded arguments
-	Result    string         // Execution result
-	Error     string         // Error message if failed
-	Status    ToolCallStatus // Current execution state
+	ID        ToolCallID     `json:"id"`               // Unique identifier for this call
+	Name      string         `json:"name"`             // Name of the tool to execute
+	Arguments string         `json:"arguments"`        // JSON-encoded arguments
+	Result    string         `json:"result,omitempty"` // Execution result
+	Error     string         `json:"error,omitempty"`  // Error message if failed
+	Status    ToolCallStatus `json:"status,omitempty"` // Current execution state
 }
 
 // NewToolCall creates a new ToolCall with the given ID, name, and arguments.
