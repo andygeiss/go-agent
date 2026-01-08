@@ -524,11 +524,7 @@ go run ./cmd/cli \
 
 - Single-agent design (no multi-agent orchestration)
 - Synchronous execution (no async tool calls)
-- Demo tools only (real tools require implementation)
-
-### Technical Debt
-
-- `calculate` tool returns placeholder result (expression evaluation not implemented)
+- Demo tools included for reference (production use requires custom tools)
 
 ---
 

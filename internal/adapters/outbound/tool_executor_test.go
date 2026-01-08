@@ -109,7 +109,110 @@ func Test_ToolExecutor_Execute_With_Calculate_Should_ReturnNonEmptyResult(t *tes
 
 	// Assert
 	assert.That(t, "must not return error", err, nil)
-	assert.That(t, "must return non-empty result", result != "", true)
+	assert.That(t, "must return correct result", result, "4")
+}
+
+func Test_ToolExecutor_Execute_With_Calculate_Multiplication_Should_ReturnCorrectResult(t *testing.T) {
+	// Arrange
+	executor := outbound.NewToolExecutor()
+	ctx := context.Background()
+
+	// Act
+	result, err := executor.Execute(ctx, "calculate", `{"expression": "3 * 4"}`)
+
+	// Assert
+	assert.That(t, "must not return error", err, nil)
+	assert.That(t, "must return correct result", result, "12")
+}
+
+func Test_ToolExecutor_Execute_With_Calculate_Division_Should_ReturnCorrectResult(t *testing.T) {
+	// Arrange
+	executor := outbound.NewToolExecutor()
+	ctx := context.Background()
+
+	// Act
+	result, err := executor.Execute(ctx, "calculate", `{"expression": "10 / 2"}`)
+
+	// Assert
+	assert.That(t, "must not return error", err, nil)
+	assert.That(t, "must return correct result", result, "5")
+}
+
+func Test_ToolExecutor_Execute_With_Calculate_Subtraction_Should_ReturnCorrectResult(t *testing.T) {
+	// Arrange
+	executor := outbound.NewToolExecutor()
+	ctx := context.Background()
+
+	// Act
+	result, err := executor.Execute(ctx, "calculate", `{"expression": "10 - 3"}`)
+
+	// Assert
+	assert.That(t, "must not return error", err, nil)
+	assert.That(t, "must return correct result", result, "7")
+}
+
+func Test_ToolExecutor_Execute_With_Calculate_Precedence_Should_ReturnCorrectResult(t *testing.T) {
+	// Arrange
+	executor := outbound.NewToolExecutor()
+	ctx := context.Background()
+
+	// Act - tests that multiplication has higher precedence than addition
+	result, err := executor.Execute(ctx, "calculate", `{"expression": "2 + 3 * 4"}`)
+
+	// Assert
+	assert.That(t, "must not return error", err, nil)
+	assert.That(t, "must return correct result (14, not 20)", result, "14")
+}
+
+func Test_ToolExecutor_Execute_With_Calculate_Parentheses_Should_ReturnCorrectResult(t *testing.T) {
+	// Arrange
+	executor := outbound.NewToolExecutor()
+	ctx := context.Background()
+
+	// Act
+	result, err := executor.Execute(ctx, "calculate", `{"expression": "(2 + 3) * 4"}`)
+
+	// Assert
+	assert.That(t, "must not return error", err, nil)
+	assert.That(t, "must return correct result", result, "20")
+}
+
+func Test_ToolExecutor_Execute_With_Calculate_NegativeNumbers_Should_ReturnCorrectResult(t *testing.T) {
+	// Arrange
+	executor := outbound.NewToolExecutor()
+	ctx := context.Background()
+
+	// Act
+	result, err := executor.Execute(ctx, "calculate", `{"expression": "-5 + 3"}`)
+
+	// Assert
+	assert.That(t, "must not return error", err, nil)
+	assert.That(t, "must return correct result", result, "-2")
+}
+
+func Test_ToolExecutor_Execute_With_Calculate_FloatResult_Should_ReturnCorrectResult(t *testing.T) {
+	// Arrange
+	executor := outbound.NewToolExecutor()
+	ctx := context.Background()
+
+	// Act
+	result, err := executor.Execute(ctx, "calculate", `{"expression": "5 / 2"}`)
+
+	// Assert
+	assert.That(t, "must not return error", err, nil)
+	assert.That(t, "must return correct result", result, "2.5")
+}
+
+func Test_ToolExecutor_Execute_With_Calculate_DivisionByZero_Should_ReturnError(t *testing.T) {
+	// Arrange
+	executor := outbound.NewToolExecutor()
+	ctx := context.Background()
+
+	// Act
+	_, err := executor.Execute(ctx, "calculate", `{"expression": "10 / 0"}`)
+
+	// Assert
+	assert.That(t, "must return error for division by zero", err != nil, true)
 }
 
 func Test_ToolExecutor_Execute_With_UnknownTool_Should_ReturnError(t *testing.T) {

@@ -15,17 +15,26 @@ A **production-ready** Go library implementing the **Observe → Decide → Act 
 
 ## Features
 
-- **Reusable Library** - Import `pkg/agent` to build LLM-powered applications
-- **LLM Integration** - OpenAI-compatible API support (works with LM Studio, OpenAI, etc.)
-- **Tool Calling** - Extensible tool system with typed parameter definitions
-- **Parallel Tool Execution** - Execute multiple tool calls concurrently for improved performance
 - **Conversation Persistence** - Save and restore conversation history with pluggable storage backends
 - **Encryption at Rest** - AES-GCM encryption for sensitive conversation data
 - **Event-Driven** - Domain events for observability and extensibility
-- **Hooks/Middleware** - Lifecycle callbacks for logging, metrics, authorization
 - **Functional Options** - Clean configuration with `With*` option functions
-- **Typed Errors** - Structured error handling with `errors.Is`/`errors.As` support
+- **Hooks/Middleware** - Lifecycle callbacks for logging, metrics, authorization
+- **LLM Integration** - OpenAI-compatible API support (works with LM Studio, OpenAI, etc.)
 - **Memory Management** - Configurable message limits to prevent context overflow
+- **Parallel Tool Execution** - Execute multiple tool calls concurrently for improved performance
+- **Reusable Library** - Import `pkg/agent` to build LLM-powered applications
+- **Tool Calling** - Extensible tool system with typed parameter definitions
+- **Typed Errors** - Structured error handling with `errors.Is`/`errors.As` support
+
+## Limitations
+
+Before diving in, be aware of these current constraints:
+
+- **Single-Agent Only** - No multi-agent orchestration; one agent per task execution
+- **Synchronous Execution** - Agent loop runs synchronously (no async/streaming responses)
+- **Demo Tools Included** - Built-in tools (`get_current_time`, `calculate`) are for demonstration; add your own for production use
+- **OpenAI-Compatible APIs** - Requires OpenAI-compatible API (LM Studio, OpenAI, Ollama, etc.)
 
 ## Quick Start
 
@@ -223,14 +232,154 @@ The agent operates in a continuous loop:
 
 For detailed architectural documentation, see [CONTEXT.md](CONTEXT.md).
 
+### Complete Integration Example
+
+Here's a full, copy-paste-ready example embedding the agent library in a Go service with hooks, conversation persistence, and a custom tool:
+
+```go
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "log"
+    "net/http"
+    "time"
+
+    "github.com/andygeiss/go-agent/internal/adapters/outbound"
+    "github.com/andygeiss/go-agent/pkg/agent"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // 1. Create LLM client (OpenAI-compatible API)
+    llmClient := outbound.NewOpenAIClient("http://localhost:1234", "default")
+
+    // 2. Create tool executor and register a custom tool
+    toolExecutor := outbound.NewToolExecutor()
+    toolExecutor.RegisterTool("weather", func(ctx context.Context, args string) (string, error) {
+        var params struct {
+            City string `json:"city"`
+        }
+        if err := json.Unmarshal([]byte(args), &params); err != nil {
+            return "", err
+        }
+        // Replace with actual weather API call
+        return fmt.Sprintf("Weather in %s: 22°C, Sunny", params.City), nil
+    })
+
+    // 3. Create event publisher (optional, for observability)
+    publisher := outbound.NewEventPublisher()
+
+    // 4. Set up conversation persistence
+    store := outbound.NewJsonFileConversationStore("conversations.json")
+
+    // 5. Create task service with hooks
+    taskService := agent.NewTaskService(llmClient, toolExecutor, publisher)
+    
+    hooks := agent.NewHooks().
+        WithBeforeTask(func(ctx context.Context, ag *agent.Agent, task *agent.Task) error {
+            // Load previous conversation
+            messages, _ := store.Load(ctx, ag.ID)
+            for _, msg := range messages {
+                ag.AddMessage(msg)
+            }
+            log.Printf("Task started: %s (loaded %d messages)", task.ID, len(messages))
+            return nil
+        }).
+        WithAfterTask(func(ctx context.Context, ag *agent.Agent, task *agent.Task) error {
+            // Save conversation
+            if err := store.Save(ctx, ag.ID, ag.Messages()); err != nil {
+                log.Printf("Failed to save conversation: %v", err)
+            }
+            log.Printf("Task completed: %s in %s", task.ID, task.Duration())
+            return nil
+        }).
+        WithAfterToolCall(func(ctx context.Context, ag *agent.Agent, tc *agent.ToolCall) error {
+            log.Printf("Tool executed: %s -> %s", tc.Name, tc.Result)
+            return nil
+        })
+    
+    taskService.WithHooks(hooks).WithParallelToolExecution()
+
+    // 6. Create agent
+    ag := agent.NewAgent("service-agent", "You are a helpful assistant with weather capabilities.",
+        agent.WithMaxIterations(10),
+        agent.WithMaxMessages(50),
+    )
+
+    // 7. Run a task
+    task := agent.NewTask("task-1", "chat", "What's the weather in Berlin?")
+    result, err := taskService.RunTask(ctx, &ag, task)
+    if err != nil {
+        log.Fatalf("Task failed: %v", err)
+    }
+
+    fmt.Printf("Response: %s\n", result.FinalAnswer)
+    fmt.Printf("Stats: %d iterations, %d tool calls, %s duration\n",
+        result.IterationCount, result.ToolCallCount, result.Duration)
+}
+```
+
+### Custom Tool with Full Parameter Definition
+
+For more control over tool parameters exposed to the LLM, extend `GetToolDefinitions`:
+
+```go
+// Custom tool executor with typed parameter definitions
+type MyToolExecutor struct {
+    *outbound.ToolExecutor
+}
+
+func NewMyToolExecutor() *MyToolExecutor {
+    te := &MyToolExecutor{ToolExecutor: outbound.NewToolExecutor()}
+    te.RegisterTool("search", te.search)
+    return te
+}
+
+func (e *MyToolExecutor) search(ctx context.Context, args string) (string, error) {
+    var params struct {
+        Query string `json:"query"`
+        Limit int    `json:"limit"`
+    }
+    if err := json.Unmarshal([]byte(args), &params); err != nil {
+        return "", err
+    }
+    if params.Limit == 0 {
+        params.Limit = 10
+    }
+    // Perform search...
+    return fmt.Sprintf("Found %d results for '%s'", params.Limit, params.Query), nil
+}
+
+func (e *MyToolExecutor) GetToolDefinitions() []agent.ToolDefinition {
+    // Include base tools plus custom ones
+    defs := e.ToolExecutor.GetToolDefinitions()
+    defs = append(defs,
+        agent.NewToolDefinition("search", "Search for information").
+            WithParameterDef(agent.NewParameterDefinition("query", agent.ParamTypeString).
+                WithDescription("The search query").
+                WithRequired()).
+            WithParameterDef(agent.NewParameterDefinition("limit", agent.ParamTypeInteger).
+                WithDescription("Maximum results to return").
+                WithDefault("10")),
+    )
+    return defs
+}
+```
+
 ## Built-in Tools
 
-The agent comes with demo tools:
+The agent includes functional demo tools:
 
 | Tool | Description |
 |------|-------------|
-| `get_current_time` | Returns the current date and time |
-| `calculate` | Performs arithmetic calculations |
+| `get_current_time` | Returns the current date and time in RFC3339 format |
+| `calculate` | Evaluates arithmetic expressions with +, -, *, / and parentheses |
+
+**Note**: These tools are for demonstration. For production use, register your own domain-specific tools.
 
 ### Adding Custom Tools
 
