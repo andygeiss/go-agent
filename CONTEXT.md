@@ -32,14 +32,22 @@ The project demonstrates:
 
 ## 3. High-Level Architecture
 
-The project provides a **reusable agent library** in `pkg/agent/` with adapter implementations in `internal/`:
+The project provides a **reusable agent library** in `pkg/agent/` with domain use cases in `internal/domain/` and adapter implementations in `internal/adapters/`:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         cmd/cli                                 │
 │                    (Application Entry Point)                    │
 └────────────────────────────┬────────────────────────────────────┘
-                             │
+                             │ uses
+┌────────────────────────────▼────────────────────────────────────┐
+│                   internal/domain/chat                          │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  SendMessageUseCase, ClearConversationUseCase,           │   │
+│  │  GetAgentStatsUseCase, TaskRunner (port)                 │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ uses
 ┌────────────────────────────▼────────────────────────────────────┐
 │                        pkg/agent                                │
 │  ┌──────────────────────────────────────────────────────────┐   │
@@ -79,6 +87,7 @@ The project provides a **reusable agent library** in `pkg/agent/` with adapter i
 - **Interface-based Design**: LLMClient, ToolExecutor, EventPublisher interfaces
 - **Functional Options**: Agent configuration via `With*` option functions
 - **Hooks/Middleware**: Lifecycle callbacks for extensibility
+- **Use Case Pattern**: Domain use cases in `internal/domain/` for application logic
 
 ---
 
@@ -91,14 +100,23 @@ go-agent/
 │       ├── main.go
 │       └── main_test.go
 ├── internal/
-│   └── adapters/
-│       └── outbound/           # Infrastructure adapters (LLM, tools, events)
-│           ├── openai_client.go
-│           ├── openai_client_test.go
-│           ├── tool_executor.go
-│           ├── tool_executor_test.go
-│           ├── event_publisher.go
-│           └── event_publisher_test.go
+│   ├── adapters/
+│   │   └── outbound/           # Infrastructure adapters (LLM, tools, events)
+│   │       ├── openai_client.go
+│   │       ├── openai_client_test.go
+│   │       ├── tool_executor.go
+│   │       ├── tool_executor_test.go
+│   │       ├── event_publisher.go
+│   │       └── event_publisher_test.go
+│   └── domain/
+│       └── chat/               # Chat domain use cases
+│           ├── ports.go              # TaskRunner interface
+│           ├── send_message.go       # SendMessageUseCase
+│           ├── send_message_test.go
+│           ├── clear_conversation.go # ClearConversationUseCase
+│           ├── clear_conversation_test.go
+│           ├── get_agent_stats.go    # GetAgentStatsUseCase
+│           └── get_agent_stats_test.go
 ├── pkg/
 │   ├── agent/                  # Reusable agent library
 │   │   ├── types.go            # ID types, Role, Status constants
@@ -118,7 +136,6 @@ go-agent/
 │   │       └── events_test.go
 │   ├── event/                  # Reusable event interfaces
 │   └── openai/                 # OpenAI API payload structures
-├── tools/                      # Development/profiling scripts
 ├── .justfile                   # Task runner configuration
 ├── .golangci.yml               # Linter configuration
 ├── Dockerfile                  # Multi-stage container build
@@ -132,6 +149,7 @@ go-agent/
 |------|-------|
 | **Agent library code** | `pkg/agent/` |
 | **Domain events** | `pkg/agent/events/` |
+| **Domain use cases** | `internal/domain/<context>/` |
 | **Infrastructure adapters** | `internal/adapters/outbound/` |
 | **Reusable utilities** | `pkg/` |
 | **Application entry points** | `cmd/` |
@@ -146,8 +164,9 @@ go-agent/
 - Keep modules small and focused
 - Prefer pure functions where possible
 - Domain layer must not import adapter layer
+- Use cases orchestrate domain logic and depend on ports (interfaces)
 - Adapters implement port interfaces defined in domain
-- Use constructor functions (e.g., `NewAgent()`, `NewTask()`)
+- Use constructor functions (e.g., `NewAgent()`, `NewTask()`, `NewSendMessageUseCase()`)
 - Use functional options pattern with `With*` methods for configuration
 - Use builder pattern with method chaining for complex objects
 
@@ -261,6 +280,23 @@ hooks := agent.NewHooks().
 
 taskService.WithHooks(hooks)
 ```
+
+### Use Case Pattern
+Application use cases live in `internal/domain/<context>/`:
+```go
+// Create use cases with dependencies
+sendMessage := chat.NewSendMessageUseCase(taskService, &agent)
+clearConversation := chat.NewClearConversationUseCase(&agent)
+getAgentStats := chat.NewGetAgentStatsUseCase(&agent)
+
+// Execute use case
+output, err := sendMessage.Execute(ctx, chat.SendMessageInput{Message: "Hello"})
+```
+
+Use cases:
+- **SendMessageUseCase** - Send a message and get a response
+- **ClearConversationUseCase** - Clear conversation history
+- **GetAgentStatsUseCase** - Retrieve agent statistics
 
 ### Event System
 - **Interface**: `pkg/event.Event` (must implement `Topic() string`)

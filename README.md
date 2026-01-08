@@ -106,7 +106,6 @@ go-agent/
 │   │   └── events/             # Domain events
 │   ├── event/                  # Event interfaces
 │   └── openai/                 # OpenAI API structures
-└── tools/                      # Development scripts
 ```
 
 ## Available Commands

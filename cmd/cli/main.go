@@ -10,6 +10,7 @@ import (
 
 	"github.com/andygeiss/cloud-native-utils/messaging"
 	"github.com/andygeiss/go-agent/internal/adapters/outbound"
+	"github.com/andygeiss/go-agent/internal/domain/chat"
 	"github.com/andygeiss/go-agent/pkg/agent"
 )
 
@@ -68,33 +69,91 @@ func main() {
 		}),
 	)
 
-	runInteractiveChat(taskService, &agentInstance, *verbose)
+	// Create use cases
+	uc := &useCases{
+		sendMessage:       chat.NewSendMessageUseCase(taskService, &agentInstance),
+		clearConversation: chat.NewClearConversationUseCase(&agentInstance),
+		getAgentStats:     chat.NewGetAgentStatsUseCase(&agentInstance),
+	}
+
+	runInteractiveChat(uc, *verbose)
+}
+
+// useCases holds the domain use cases for the CLI.
+type useCases struct {
+	sendMessage       *chat.SendMessageUseCase
+	clearConversation *chat.ClearConversationUseCase
+	getAgentStats     *chat.GetAgentStatsUseCase
 }
 
 // handleCommand processes special commands. Returns true if a command was handled,
 // and a second bool indicating if the loop should break.
-func handleCommand(input string, ag *agent.Agent) (bool, bool) {
+func handleCommand(input string, uc *useCases) (bool, bool) {
 	switch input {
 	case "quit", "exit":
-		printFinalStats(ag)
+		printFinalStats(uc.getAgentStats)
 		fmt.Println("Goodbye! 👋")
 		return true, true
 	case "clear":
-		ag.ClearMessages()
+		uc.clearConversation.Execute()
 		fmt.Println("🗑️  Conversation cleared.")
 		fmt.Println()
 		return true, false
 	case "stats":
-		printAgentStats(ag)
+		printAgentStats(uc.getAgentStats)
 		return true, false
 	default:
 		return false, false
 	}
 }
 
-func runInteractiveChat(taskService *agent.TaskService, ag *agent.Agent, verbose bool) {
+// printAgentStats displays the current agent statistics.
+func printAgentStats(uc *chat.GetAgentStatsUseCase) {
+	stats := uc.Execute()
+	fmt.Println()
+	fmt.Println("📊 Agent Statistics")
+	fmt.Println("-------------------")
+	fmt.Printf("Agent ID:        %s\n", stats.AgentID)
+	fmt.Printf("Messages:        %d\n", stats.MessageCount)
+	fmt.Printf("Tasks:           %d (✓ %d completed, ✗ %d failed)\n",
+		stats.TaskCount, stats.CompletedTasks, stats.FailedTasks)
+	fmt.Printf("Max iterations:  %d\n", stats.MaxIterations)
+	fmt.Printf("Max messages:    %d\n", stats.MaxMessages)
+	if stats.Model != "" {
+		fmt.Printf("Model:           %s\n", stats.Model)
+	}
+	fmt.Println()
+}
+
+// printFinalStats shows a summary of the session upon exit.
+func printFinalStats(uc *chat.GetAgentStatsUseCase) {
+	stats := uc.Execute()
+	if stats.TaskCount > 0 {
+		fmt.Println()
+		fmt.Printf("📈 Session summary: %d tasks (✓ %d, ✗ %d), %d messages\n",
+			stats.TaskCount, stats.CompletedTasks, stats.FailedTasks, stats.MessageCount)
+	}
+}
+
+// printResult displays the result of a sent message.
+func printResult(output chat.SendMessageOutput, verbose bool) {
+	if output.Success {
+		fmt.Printf("🤖 Assistant: %s\n", output.Response)
+		if verbose {
+			fmt.Printf("   ⏱️  %s | 🔄 %d iterations | 🔧 %d tool calls\n",
+				output.Duration,
+				output.IterationCount,
+				output.ToolCallCount)
+		}
+		fmt.Println()
+	} else {
+		fmt.Printf("⚠️  Task failed: %s\n\n", output.Error)
+	}
+}
+
+// runInteractiveChat starts the interactive chat loop.
+func runInteractiveChat(uc *useCases, verbose bool) {
 	scanner := bufio.NewScanner(os.Stdin)
-	taskCounter := 0
 
 	for {
 		fmt.Print("You: ")
@@ -107,26 +166,22 @@ func runInteractiveChat(taskService *agent.TaskService, ag *agent.Agent, verbose
 			continue
 		}
 
-		if handled, shouldBreak := handleCommand(input, ag); handled {
+		if handled, shouldBreak := handleCommand(input, uc); handled {
 			if shouldBreak {
 				break
 			}
 			continue
 		}
 
-		// Create and run a task
-		taskCounter++
-		taskID := agent.TaskID(fmt.Sprintf("task-%d", taskCounter))
-		task := agent.NewTask(taskID, "chat", input)
-
+		// Send message using use case
 		ctx := context.Background()
-		result, err := taskService.RunTask(ctx, ag, task)
+		output, err := uc.sendMessage.Execute(ctx, chat.SendMessageInput{Message: input})
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n\n", err)
 			continue
 		}
 
-		printResult(result, verbose)
+		printResult(output, verbose)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -135,45 +190,7 @@ func runInteractiveChat(taskService *agent.TaskService, ag *agent.Agent, verbose
 	}
 }
 
-func printResult(result agent.Result, verbose bool) {
-	if result.Success {
-		fmt.Printf("🤖 Assistant: %s\n", result.Output)
-		if verbose {
-			fmt.Printf("   ⏱️  %s | 🔄 %d iterations | 🔧 %d tool calls\n",
-				result.Duration.Round(1000000), // Round to milliseconds
-				result.IterationCount,
-				result.ToolCallCount)
-		}
-		fmt.Println()
-	} else {
-		fmt.Printf("⚠️  Task failed: %s\n\n", result.Error)
-	}
-}
-
-func printAgentStats(ag *agent.Agent) {
-	fmt.Println()
-	fmt.Println("📊 Agent Statistics")
-	fmt.Println("-------------------")
-	fmt.Printf("Agent ID:        %s\n", ag.ID)
-	fmt.Printf("Messages:        %d\n", ag.MessageCount())
-	fmt.Printf("Tasks:           %d (✓ %d completed, ✗ %d failed)\n",
-		ag.TaskCount(), ag.CompletedTaskCount(), ag.FailedTaskCount())
-	fmt.Printf("Max iterations:  %d\n", ag.MaxIterations)
-	fmt.Printf("Max messages:    %d\n", ag.MaxMessages)
-	if model := ag.GetMetadata("model"); model != "" {
-		fmt.Printf("Model:           %s\n", model)
-	}
-	fmt.Println()
-}
-
-func printFinalStats(ag *agent.Agent) {
-	if ag.TaskCount() > 0 {
-		fmt.Println()
-		fmt.Printf("📈 Session summary: %d tasks (✓ %d, ✗ %d), %d messages\n",
-			ag.TaskCount(), ag.CompletedTaskCount(), ag.FailedTaskCount(), ag.MessageCount())
-	}
-}
-
+// truncate shortens a string to maxLen, adding "..." if truncated.
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
