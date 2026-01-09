@@ -1,613 +1,421 @@
 # CONTEXT.md
 
-This document serves as the authoritative project context for AI coding agents, retrieval systems, and developers. It describes the architecture, conventions, and contracts of the go-agent repository.
+## 1. Project purpose
+
+**go-agent** is a reusable AI agent framework for Go implementing the observe → decide → act → update loop pattern for LLM-based task execution. It provides:
+
+- A clean, domain-driven architecture for building AI agents with tool use capabilities
+- OpenAI-compatible API integration (works with LM Studio and other local LLMs)
+- Built-in resilience patterns (retry, circuit breaker, timeout, throttling)
+- Event-driven architecture for task lifecycle observability
+- Memory system for long-term agent context
+
+This repository serves as both a **production-ready library** and a **reference implementation** for building agentic applications in Go using hexagonal architecture patterns.
 
 ---
 
-## 1. Project Purpose
+## 2. Technology stack
 
-Go Agent is a **production-ready** Go library that implements the **Observe → Decide → Act → Update** loop pattern for building LLM-powered applications. It provides:
-
-- A domain-driven agent framework with typed entities (Agent, Task, Message, ToolCall)
-- Port/adapter architecture for pluggable LLM clients and tool executors
-- Event-driven observability through domain events
-- Lifecycle hooks for cross-cutting concerns (logging, metrics, authorization)
-- Parallel tool execution for improved performance with I/O-bound operations
-- Conversation persistence with in-memory and JSON file storage backends
-- AES-GCM encryption for sensitive conversation data at rest
-- Resilience patterns (timeout, retry, circuit breaker, debounce, throttle)
-- Comprehensive test coverage (~78%) with performance benchmarks
-
-The library is designed to be imported and extended, with a reference CLI application demonstrating integration with LM Studio (OpenAI-compatible API).
-
----
-
-## 2. Technology Stack
-
-| Component | Technology |
-|-----------|------------|
+| Category | Technology |
+|----------|------------|
 | Language | Go 1.25+ |
 | LLM API | OpenAI-compatible (LM Studio, OpenAI, etc.) |
-| Testing | `testing` + `github.com/andygeiss/cloud-native-utils/assert` |
-| Event Bus | `github.com/andygeiss/cloud-native-utils/messaging` |
-| Resilience | `github.com/andygeiss/cloud-native-utils/stability` |
-| Concurrency | `github.com/andygeiss/cloud-native-utils/efficiency` |
-| Persistence | `github.com/andygeiss/cloud-native-utils/resource` |
-| Security | `github.com/andygeiss/cloud-native-utils/security` |
-| Logging | `log/slog` via `github.com/andygeiss/cloud-native-utils/logging` |
-| Slice Utils | `github.com/andygeiss/cloud-native-utils/slices` |
-| HTTP | Standard library `net/http` |
-| Build | `go build` with PGO support |
-| Container | Multi-stage Docker (scratch runtime) |
-| Task Runner | [just](https://github.com/casey/just) |
-| Linting | golangci-lint |
+| Architecture | Hexagonal (Ports & Adapters) / DDD |
+| Utility Library | `github.com/andygeiss/cloud-native-utils` |
+| Build | Go modules, multi-stage Docker |
+| Profiling | PGO (Profile-Guided Optimization) |
+| Container Runtime | Docker / Docker Compose |
+
+### Key dependencies
+
+- `cloud-native-utils/messaging` — Event dispatching
+- `cloud-native-utils/stability` — Timeout, retry, circuit breaker patterns
+- `cloud-native-utils/efficiency` — Worker pools for parallel execution
+- `cloud-native-utils/resource` — Generic storage access (in-memory, JSON file)
+- `cloud-native-utils/slices` — Functional slice utilities
 
 ---
 
-## 3. High-Level Architecture
+## 3. High-level architecture
 
-The project follows **Hexagonal Architecture** (Ports and Adapters) combined with **Domain-Driven Design** principles. All domain logic lives under `internal/domain/`, making this project ideal as a **template** for building LLM-powered applications.
+The project follows **hexagonal architecture** (ports and adapters) with **domain-driven design** principles:
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                    Application Layer (cmd/cli)                   │
-│                   • CLI entry point, flags, I/O                  │
-└───────────────────────────────┬──────────────────────────────────┘
-                                │ uses
-┌───────────────────────────────▼──────────────────────────────────┐
-│                    Domain Layer (internal/domain)                │
-│   ┌─────────────────────────────────────────────────────────┐   │
-│   │ agent/        Core agent framework                       │   │
-│   │   • Agent aggregate (conversation, tasks, iteration)     │   │
-│   │   • TaskService (Observe → Decide → Act → Update loop)   │   │
-│   │   • Ports: LLMClient, ToolExecutor, EventPublisher       │   │
-│   │   • Domain events, typed errors, value objects           │   │
-│   ├─────────────────────────────────────────────────────────┤   │
-│   │ openai/       OpenAI API data structures                 │   │
-│   ├─────────────────────────────────────────────────────────┤   │
-│   │ chatting/     Chat use cases (SendMessage, etc.)         │   │
-│   ├─────────────────────────────────────────────────────────┤   │
-│   │ tooling/      Tool definitions and implementations       │   │
-│   ├─────────────────────────────────────────────────────────┤   │
-│   │ memorizing/   Memory management use cases                │   │
-│   └─────────────────────────────────────────────────────────┘   │
-└───────────────────────────────┬──────────────────────────────────┘
-                                │ implemented by
-┌───────────────────────────────▼──────────────────────────────────┐
-│               Adapter Layer (internal/adapters/outbound)         │
-│   • OpenAIClient (LLM port → OpenAI API)                         │
-│   • ToolExecutor (tool registration and execution)               │
-│   • EventPublisher (event port → messaging dispatcher)           │
-│   • ConversationStore, MemoryStore (persistence adapters)        │
-└──────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         cmd/cli                                 │
+│                    (Application Entry)                          │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────────┐
+│                     internal/domain                             │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │ agent/        Core agent aggregate, task service, types     ││
+│  │ chatting/     Use cases: SendMessage, ClearConversation     ││
+│  │ memorizing/   Use cases: WriteNote, SearchNotes, GetNote    ││
+│  │ tooling/      Tool implementations (calculate, time, etc.)  ││
+│  │ openai/       OpenAI API data structures (value objects)    ││
+│  └─────────────────────────────────────────────────────────────┘│
+└──────────────────────────────┬──────────────────────────────────┘
+                               │ depends on interfaces (ports)
+┌──────────────────────────────▼──────────────────────────────────┐
+│                   internal/adapters/outbound                    │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │ openai_client.go       LLMClient implementation             ││
+│  │ tool_executor.go       ToolExecutor implementation          ││
+│  │ event_publisher.go     EventPublisher implementation        ││
+│  │ memory_store.go        MemoryStore implementation           ││
+│  │ conversation_store.go  ConversationStore implementation     ││
+│  └─────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Key Boundaries
+### Agent loop pattern
 
-| Layer | Responsibility | Dependencies |
-|-------|----------------|--------------|
-| `cmd/` | Application entry, configuration | internal/domain/* |
-| `internal/domain/agent/` | Core agent framework, ports, events | cloud-native-utils (interfaces) |
-| `internal/domain/openai/` | OpenAI API data structures | None |
-| `internal/domain/chatting/` | Chat use cases | internal/domain/agent |
-| `internal/domain/tooling/` | Tool definitions and implementations | internal/domain/agent |
-| `internal/domain/memorizing/` | Memory management use cases | internal/domain/agent |
-| `internal/adapters/` | Infrastructure implementations | internal/domain/*, external APIs |
+The core agent implements the observe → decide → act → update loop:
+
+1. **Observe**: Receive user input, build message context
+2. **Decide**: Call LLM with messages and tool definitions
+3. **Act**: Execute any tool calls requested by LLM
+4. **Update**: Add results to conversation, check termination conditions
+5. **Repeat** until task completes, fails, or max iterations reached
 
 ---
 
-## 4. Directory Structure (Contract)
+## 4. Directory structure (contract)
 
 ```
 go-agent/
 ├── cmd/
-│   └── cli/                    # CLI application
-│       ├── main.go             # Entry point, flag parsing, setup
+│   └── cli/                    # CLI application entry point
+│       ├── main.go             # Main function, flag parsing, wiring
 │       └── main_test.go        # Integration tests
 ├── internal/
 │   ├── adapters/
-│   │   └── outbound/           # Infrastructure adapters
-│   │       ├── conversation_store.go         # ConversationStore implementation
-│   │       ├── encrypted_conversation_store.go # Encrypted storage wrapper
-│   │       ├── event_publisher.go            # EventPublisher implementation
-│   │       ├── memory_store.go               # MemoryStore implementation
-│   │       ├── openai_client.go              # LLMClient implementation
-│   │       └── tool_executor.go              # ToolExecutor implementation
+│   │   └── outbound/           # Infrastructure adapters (ports implementations)
+│   │       ├── openai_client.go        # LLMClient → OpenAI API
+│   │       ├── tool_executor.go        # ToolExecutor → tool registry
+│   │       ├── event_publisher.go      # EventPublisher → messaging
+│   │       ├── memory_store.go         # MemoryStore → storage backend
+│   │       ├── conversation_store.go   # ConversationStore → file persistence
+│   │       └── encrypted_*.go          # Encrypted variants
 │   └── domain/
-│       ├── agent/              # Core agent framework
-│       │   ├── agent.go            # Agent aggregate root
-│       │   ├── agent_test.go       # Agent tests
-│       │   ├── benchmark_test.go   # Performance benchmarks
-│       │   ├── conversation.go     # Conversation management
-│       │   ├── errors.go           # Typed errors (LLMError, ToolError, TaskError)
-│       │   ├── errors_test.go      # Error tests
-│       │   ├── events.go           # Domain events (TaskStarted, TaskCompleted, ToolCallExecuted)
-│       │   ├── events_test.go      # Event tests
-│       │   ├── hooks.go            # Lifecycle hooks
-│       │   ├── llm.go              # LLM port and LLMResponse
-│       │   ├── memory.go           # MemoryStore port
-│       │   ├── memory_note.go      # Memory note entity
-│       │   ├── memory_note_test.go # Memory note tests
-│       │   ├── message.go          # Message entity
-│       │   ├── message_test.go     # Message tests
-│       │   ├── shared.go           # Shared types and constants
-│       │   ├── shared_test.go      # Shared tests
-│       │   ├── task.go             # Task entity with lifecycle management
-│       │   ├── task_test.go        # Task tests
-│       │   ├── task_service.go     # TaskService (agent loop orchestration)
-│       │   ├── task_service_test.go# TaskService tests
-│       │   ├── tool_call.go        # ToolCall entity with execution state
-│       │   ├── tool_call_test.go   # ToolCall tests
-│       │   ├── tool_definition.go  # ToolDefinition, ParameterDefinition, validation
-│       │   ├── tool_definition_test.go # ToolDefinition tests
-│       │   └── tools.go            # ToolExecutor port
-│       ├── openai/             # OpenAI API data structures
-│       │   ├── chat_completion_*.go # Request/response types
-│       │   ├── message.go          # Chat message format
-│       │   ├── tool.go             # Tool definition format
-│       │   └── tool_call.go        # Tool call format
-│       ├── chatting/           # Chatting domain
-│       │   ├── clear_conversation.go     # ClearConversationUseCase
-│       │   ├── clear_conversation_test.go
-│       │   ├── get_agent_stats.go        # GetAgentStatsUseCase, AgentStats
-│       │   ├── get_agent_stats_test.go
-│       │   ├── send_message.go           # SendMessageUseCase, Input/Output types
-│       │   └── send_message_test.go
-│       ├── memorizing/         # Memory management domain
-│       │   ├── delete_note.go            # DeleteNoteUseCase
-│       │   ├── delete_note_test.go
-│       │   ├── errors.go                 # Memory domain errors
-│       │   ├── get_note.go               # GetNoteUseCase
-│       │   ├── get_note_test.go
-│       │   ├── search_notes.go           # SearchNotesUseCase
-│       │   ├── search_notes_test.go
-│       │   ├── service.go                # Service facade
-│       │   ├── service_test.go           # Service tests with mock store
-│       │   ├── write_note.go             # WriteNoteUseCase
-│       │   └── write_note_test.go
-│       └── tooling/            # Tooling domain
-│           ├── calculate.go          # Calculate tool (NewCalculateTool, Calculate, expression parser)
-│           ├── calculate_test.go     # Calculate tool tests
-│           ├── memory_tools.go       # Memory tool implementations
-│           ├── memory_tools_test.go  # Memory tool tests
-│           ├── time.go               # Time tool (NewGetCurrentTimeTool, GetCurrentTime)
-│           └── time_test.go          # Time tool tests
-├── AGENTS.md                   # AI agent definitions index
+│       ├── agent/              # Core domain: Agent aggregate, Task, Message, etc.
+│       │   ├── agent.go        # Agent aggregate root
+│       │   ├── task.go         # Task entity
+│       │   ├── task_service.go # Task orchestration (agent loop)
+│       │   ├── message.go      # Message value object
+│       │   ├── tool_*.go       # Tool-related types
+│       │   ├── memory*.go      # Memory types and interfaces
+│       │   ├── hooks.go        # Lifecycle hooks
+│       │   ├── events.go       # Domain events
+│       │   ├── errors.go       # Domain errors
+│       │   ├── llm.go          # LLMClient interface (port)
+│       │   ├── tools.go        # ToolExecutor interface (port)
+│       │   └── shared.go       # Shared types (IDs, Result, Role, Status)
+│       ├── chatting/           # Chatting use cases
+│       │   ├── send_message.go
+│       │   ├── clear_conversation.go
+│       │   └── get_agent_stats.go
+│       ├── memorizing/         # Memory management use cases
+│       │   ├── service.go      # Memory service
+│       │   ├── write_note.go
+│       │   ├── search_notes.go
+│       │   ├── get_note.go
+│       │   └── delete_note.go
+│       ├── tooling/            # Tool implementations
+│       │   ├── calculate.go    # Arithmetic calculator
+│       │   ├── time.go         # Current time
+│       │   └── memory_tools.go # Memory read/write tools
+│       └── openai/             # OpenAI API types (value objects)
+│           └── *.go            # Request/response structures
+├── AGENTS.md                   # Agent definitions index
 ├── CONTEXT.md                  # This file
-├── Dockerfile                  # Multi-stage container build
-├── README.md                   # User documentation
-├── VENDOR.md                   # Vendor library documentation
-├── docker-compose.yml          # Local development services
-└── go.mod                      # Go module definition
+├── README.md                   # User-facing documentation
+├── go.mod / go.sum             # Go modules
+├── Dockerfile                  # Multi-stage build
+└── docker-compose.yml          # Container orchestration
 ```
 
-### Rules for New Code
+### Rules for new code
 
-| Concern | Location |
-|---------|----------|
-| Core agent extensions | `internal/domain/agent/` |
-| New domain events | `internal/domain/agent/events.go` |
-| OpenAI API structures | `internal/domain/openai/` |
-| New domain use cases | `internal/domain/<domain>/` |
+| Code type | Location |
+|-----------|----------|
+| New domain entities/aggregates | `internal/domain/agent/` |
+| New use cases | `internal/domain/<bounded-context>/` |
+| New tool implementations | `internal/domain/tooling/` |
 | New infrastructure adapters | `internal/adapters/outbound/` |
-| Tests | Same directory as source, `*_test.go` |
+| CLI commands/flags | `cmd/cli/` |
+| Tests | Same directory as implementation (`*_test.go`) |
+| OpenAI API types | `internal/domain/openai/` |
 
 ---
 
-## 5. Coding Conventions
+## 5. Coding conventions
 
 ### 5.1 General
 
-- **Small, focused packages**: Each package has a single responsibility
-- **Pure functions where possible**: Minimize side effects
-- **Dependency injection**: Pass dependencies through constructors
-- **Functional options pattern**: Use `With*` functions for configuration
-- **Value objects for IDs**: `AgentID`, `TaskID`, `ToolCallID` provide type safety
-- **Method chaining**: Builder pattern with `With*` methods returning the modified type
-- **No global state**: All state is contained in structs
+- **Small, focused files**: One type or concept per file
+- **Interface segregation**: Define interfaces in the domain, implement in adapters
+- **Functional options**: Use `With*` pattern for optional configuration
+- **Value objects with builders**: Use method chaining for building immutable types
+- **Pure domain logic**: Domain layer has no external dependencies
+- **Dependency injection**: Wire dependencies at the application boundary (`cmd/`)
 
-### 5.2 File Organization
-
-Files are organized by **functionality**, not by DDD element type:
-
-- **Group related code together**: Types, constructors, and methods for a single entity belong in one file
-- **Name files by feature**: `calculate.go` (not `service.go`), `message.go` (not `entities.go`)
-- **Keep private types with their users**: Helper types belong in the file that uses them
-- **Shared types in dedicated files**: Cross-cutting types go in `errors.go`, `events.go`, `value_objects.go`
-
-**Examples:**
-- `calculate.go`: Contains `Calculate()`, `NewCalculateTool()`, `calculateArgs`, and the expression parser
-- `message.go`: Contains `Message`, `LLMResponse`, constructors, and all their methods
-- `errors.go`: Contains all error types and sentinel errors for the package
-
-**Anti-patterns to avoid:**
-- Monolithic `entities.go` files containing unrelated types
-- Separating types from their methods across files
-- Using generic file names like `service.go` when multiple services exist
-
-### 5.3 Naming
+### 5.2 Naming
 
 | Element | Convention | Example |
 |---------|------------|---------|
-| Files | `snake_case.go` | `task_service.go` |
-| Test files | `<name>_test.go` | `task_service_test.go` |
-| Packages | Single lowercase word | `agent`, `chatting`, `outbound` |
-| Types/Structs | `PascalCase` | `TaskService`, `LLMResponse` |
-| Interfaces | `PascalCase`, noun or `-er` suffix | `LLMClient`, `ToolExecutor` |
-| Constructors | `New<Type>` | `NewAgent()`, `NewTaskService()` |
-| Options | `With<Property>` | `WithMaxIterations()` |
-| Constants | `PascalCase` for exported, grouped by type | `RoleSystem`, `TaskStatusPending` |
-| ID types | `<Entity>ID` | `AgentID`, `TaskID` |
-| Status types | `<Entity>Status` | `TaskStatus`, `ToolCallStatus` |
+| Files | `snake_case.go` | `tool_executor.go` |
+| Packages | lowercase, short | `agent`, `chatting` |
+| Types | `PascalCase` | `TaskService`, `ToolCall` |
+| Interfaces | `PascalCase`, describe behavior | `LLMClient`, `ToolExecutor` |
+| ID types | `*ID` suffix | `TaskID`, `AgentID`, `NoteID` |
+| Status enums | `*Status` suffix with constants | `TaskStatus`, `ToolCallStatus` |
+| Options | `Option` type with `With*` functions | `WithMaxIterations(10)` |
+| Constructors | `New*` | `NewAgent()`, `NewTask()` |
+| Builder methods | `With*` | `WithToolCalls()`, `WithDuration()` |
+| Use cases | `*UseCase` | `SendMessageUseCase` |
+| Events | `Event*` | `EventTaskStarted` |
+| Errors | `Err*` sentinel, `*Error` struct | `ErrToolNotFound`, `ToolError` |
 
-### 5.4 Error Handling & Logging
+### 5.3 Error handling & logging
 
-**Error Handling:**
-- Use sentinel errors for common conditions: `ErrMaxIterationsReached`, `ErrToolNotFound`
-- Use typed errors for rich context: `LLMError`, `ToolError`, `TaskError`
-- Implement `Unwrap()` for `errors.Is`/`errors.As` support
-- Wrap errors with context: `fmt.Errorf("failed to X: %w", err)`
-- Return errors up the call stack; let callers decide how to handle
+**Error patterns:**
+- Define sentinel errors with `errors.New()` for expected conditions
+- Create typed error structs (`LLMError`, `TaskError`, `ToolError`) with `Unwrap()` for error chains
+- Return errors up the call stack; handle at appropriate boundaries
+- Use `fmt.Errorf("context: %w", err)` to wrap errors with context
 
 **Logging:**
-- No logging in core domain code (`internal/domain/agent/`)
-- Adapters support optional structured logging via `WithLogger(*slog.Logger)`
-- Use `logging.NewJsonLogger()` from cloud-native-utils for JSON output
-- Log level controlled by `LOGGING_LEVEL` environment variable (DEBUG, INFO, WARN, ERROR)
-- Use hooks for additional observability in applications
+- Use `log/slog` for structured logging
+- Inject logger via `With*` methods (optional)
+- Log at debug level for normal operations, error level for failures
+- Include relevant context: tool name, duration, task ID
 
-### 5.5 Testing
+### 5.4 Testing
 
-**Framework:** Standard `testing` package with `cloud-native-utils/assert`
+**Framework:** Standard `testing` package
 
-**Naming Convention:**
-```
-Test_<Type>_<Method>_<Scenario>_Should_<Expected>
-```
+**Organization:**
+- Test files: `*_test.go` in same package
+- Unit tests: Test single functions/methods in isolation
+- Table-driven tests: Use `tests := []struct{...}` pattern
+- Benchmarks: `Benchmark*` functions in `*_test.go`
 
-Examples:
-- `Test_Agent_AddMessage_Should_AppendToHistory`
-- `Test_TaskService_RunTask_With_MaxIterations_Should_ReturnError`
+**Patterns:**
+- Create test helpers in `shared_test.go`
+- Use in-memory implementations for testing adapters
+- Test error conditions explicitly
 
-**Structure:** Arrange-Act-Assert pattern
-```go
-func Test_Example_Should_Work(t *testing.T) {
-    // Arrange
-    input := "test"
-    
-    // Act
-    result := processInput(input)
-    
-    // Assert
-    assert.That(t, "result must match expected", result, "expected")
-}
-```
+### 5.5 Formatting & linting
 
-**Test Location:** Same directory as source code, `*_test.go` suffix
-
-**Mock Strategy:** 
-- Create mock implementations of interfaces in test files
-- Use interface boundaries for testability
-- No external mocking libraries
-
-### 5.6 Formatting & Linting
-
-**Tools:**
-- `gofmt` / `goimports`: Standard Go formatting
-- `golangci-lint`: Comprehensive linting
-
-**Key Rules:**
-- Run `just fmt` before committing
-- Run `just lint` to check for issues
-- No lint warnings in CI
+- **Formatter:** `gofmt` / `goimports`
+- **Linter:** `go vet`, standard Go toolchain
+- Run `go fmt ./...` before committing
+- Keep imports grouped: stdlib, external, internal
 
 ---
 
-## 6. Cross-Cutting Concerns and Reusable Patterns
+## 6. Cross-cutting concerns and reusable patterns
 
-### Agent Loop Pattern
-
-The core abstraction is the **Observe → Decide → Act → Update** loop in `TaskService`:
-
-1. **Observe**: Build message context with system prompt
-2. **Decide**: Call LLM with messages and tool definitions
-3. **Act**: Execute any tool calls from LLM response
-4. **Update**: Add messages to conversation, check for completion
-
-### Ports (Interfaces)
-
-Located in `internal/domain/agent/ports_outbound.go`:
-
-| Port | Responsibility | Adapter |
-|------|----------------|---------|
-| `LLMClient` | Send messages to LLM, get responses | `OpenAIClient` |
-| `ToolExecutor` | Register and execute tools | `ToolExecutor` |
-| `EventPublisher` | Publish domain events | `EventPublisher` |
-| `ConversationStore` | Persist and load conversation history | `ConversationStore`, `EncryptedConversationStore` |
-| `MemoryStore` | Persist and search memory notes | `MemoryStore` |
-
-### Hooks/Middleware
-
-Located in `internal/domain/agent/service.go`. Available hooks:
-
-| Hook | When Called | Use Case |
-|------|-------------|----------|
-| `BeforeTask` | Before task starts | Validation, setup, logging |
-| `AfterTask` | After task completes | Cleanup, metrics |
-| `BeforeLLMCall` | Before each LLM request | Rate limiting, request logging |
-| `AfterLLMCall` | After each LLM response | Response caching, logging |
-| `BeforeToolCall` | Before each tool execution | Authorization, argument validation |
-| `AfterToolCall` | After each tool execution | Result logging, caching |
-
-### Domain Events
-
-Located in `internal/domain/agent/events.go`:
-
-| Event | Topic | When Emitted |
-|-------|-------|--------------|
-| `EventTaskStarted` | `agent.task.started` | Task begins execution |
-| `EventTaskCompleted` | `agent.task.completed` | Task finishes successfully |
-| `EventTaskFailed` | `agent.task.failed` | Task terminates with error |
-| `EventToolCallExecuted` | `agent.toolcall.executed` | Tool call completes |
-
-### Tool Definition
-
-Use typed parameters with `ParameterDefinition`:
+### Resilience (via cloud-native-utils/stability)
 
 ```go
-toolDef := agent.NewToolDefinition("search", "Search for information").
-    WithParameterDef(agent.NewParameterDefinition("query", agent.ParamTypeString).
-        WithDescription("The search query").
-        WithRequired()).
-    WithParameterDef(agent.NewParameterDefinition("limit", agent.ParamTypeInteger).
-        WithDescription("Maximum results").
-        WithDefault("10"))
+// Timeout wrapper
+stability.Timeout(fn, 30*time.Second)
+
+// Retry with backoff
+stability.Retry(fn, 3, 2*time.Second)
+
+// Circuit breaker
+stability.CircuitBreaker(fn, threshold)
 ```
 
-### Typed Errors
+The `OpenAIClient` wraps LLM calls with configurable resilience:
+- HTTP timeout: 60s (configurable)
+- LLM call timeout: 120s (configurable)
+- Retry: 3 attempts with 2s delay (configurable)
+- Circuit breaker: opens after 5 failures (configurable)
+- Throttle: disabled by default (configurable)
 
-Use `errors.Is` and `errors.As` for error handling:
+### Event publishing
+
+Domain events are published via `EventPublisher` interface:
+- `agent.task.started` — Task begins execution
+- `agent.task.completed` — Task finishes successfully
+- `agent.task.failed` — Task terminates with error
+- `agent.toolcall.executed` — Tool call completes
+
+### Hooks for extensibility
 
 ```go
-if errors.Is(err, agent.ErrMaxIterationsReached) { ... }
+hooks := agent.NewHooks().
+    WithBeforeTask(func(ctx, agent, task) error { ... }).
+    WithAfterToolCall(func(ctx, agent, toolCall) error { ... })
 
-var toolErr *agent.ToolError
-if errors.As(err, &toolErr) {
-    log.Printf("Tool %s failed: %s", toolErr.ToolName, toolErr.Message)
-}
+taskService.WithHooks(hooks)
 ```
 
-### Vendor Libraries
-
-See [VENDOR.md](VENDOR.md) for approved vendor libraries and usage patterns. Key guidance:
-
-- Use `cloud-native-utils/assert` for testing assertions
-- Use `cloud-native-utils/messaging` for event publishing
-- Use `cloud-native-utils/stability` for resilience patterns (Timeout, Retry, Breaker, Debounce)
-- Use `cloud-native-utils/efficiency` for parallel processing (Generate, Process)
-- Use `cloud-native-utils/resource` for persistent storage (Access interface)
-- Use `cloud-native-utils/security` for encryption (AES-GCM)
-- Use `cloud-native-utils/slices` for Filter/Map/Unique operations
-- Prefer Go standard library for HTTP, JSON, context
-
-### Resilience Patterns
-
-External calls (LLM, tools) are wrapped with resilience patterns from `cloud-native-utils/stability`:
-
-| Pattern | Purpose | Default |
-|---------|---------|---------|
-| `stability.Timeout` | Enforce maximum execution time | LLM: 120s, Tools: 30s |
-| `stability.Retry` | Handle transient failures | 3 attempts, 2s delay |
-| `stability.Breaker` | Prevent cascading failures | Opens after 5 failures |
-| `stability.Throttle` | Rate limit API calls | Disabled (opt-in) |
-
-**LLM Call Flow (with throttling enabled):**
-```
-Request → Timeout(120s) → Retry(3, 2s) → Breaker(5) → Throttle(tokens) → HTTP POST
-```
-
-**Tool Execution Flow:**
-```
-Execute → Timeout(30s) → Tool Function
-```
-
-All settings are configurable via builder methods:
-```go
-client := outbound.NewOpenAIClient(baseURL, model).
-    WithLLMTimeout(90 * time.Second).
-    WithRetry(5, 3*time.Second).
-    WithCircuitBreaker(10).
-    WithThrottle(10, 2, time.Second)  // 10 calls max, refill 2/sec
-```
-
-### Parallel Tool Execution
-
-When the LLM returns multiple tool calls, they can be executed concurrently using `cloud-native-utils/efficiency`:
+### Tool registration
 
 ```go
-taskService := agent.NewTaskService(llmClient, toolExecutor, publisher).
-    WithParallelToolExecution()
+tool := tooling.NewCalculateTool()
+executor.RegisterTool("calculate", tool.Func)
+executor.RegisterToolDefinition(tool.Definition)
 ```
 
-**Sequential (default):**
-```
-Tool1 → Tool2 → Tool3 (total time = sum of all)
-```
+### Memory system
 
-**Parallel:**
-```
-Tool1 ─┐
-Tool2 ─┼─→ Results (total time = max of all)
-Tool3 ─┘
-```
-
-Parallel execution is ideal for I/O-bound tools (API calls, file operations). For CPU-bound operations, sequential may be more efficient due to coordination overhead.
-
-### Conversation Persistence
-
-Persist conversation history using `cloud-native-utils/resource`:
-
-```go
-// In-memory storage (for testing)
-store := outbound.NewInMemoryConversationStore()
-
-// JSON file storage (for production)
-store := outbound.NewJsonFileConversationStore("conversations.json")
-
-// ConversationStore interface
-type ConversationStore interface {
-    Save(ctx context.Context, agentID AgentID, messages []Message) error
-    Load(ctx context.Context, agentID AgentID) ([]Message, error)
-    Clear(ctx context.Context, agentID AgentID) error
-}
-```
-
-### Encrypted Storage
-
-Protect sensitive conversation data with AES-GCM encryption from `cloud-native-utils/security`:
-
-```go
-// Generate encryption key (store securely!)
-key := security.GenerateKey()
-
-// Wrap any ConversationStore with encryption
-baseStore := outbound.NewJsonFileConversationStore("conversations.json")
-encStore := outbound.NewEncryptedConversationStore(baseStore, key)
-
-// Use like any ConversationStore
-err := encStore.Save(ctx, agentID, messages)
-messages, err := encStore.Load(ctx, agentID)
-```
+Memory notes store long-term context:
+- `MemoryNote` — atomic unit with metadata, tags, importance
+- `MemoryStore` — interface with in-memory and JSON file implementations
+- Search by query, filter by user/session/task/tags
 
 ---
 
-## 7. Using This Repo as a Template
+## 7. Using this repo as a template
 
-This repository is designed as a **template** for building LLM-powered applications. All code lives under `internal/`, making it straightforward to fork and customize.
+### Invariants (must preserve)
 
-### What Must Be Preserved
+- Hexagonal architecture separation (domain → adapters → cmd)
+- Interface definitions in domain layer
+- Functional options pattern for configuration
+- Event-driven task lifecycle
+- Structured error types
 
-- **Directory structure**: `cmd/`, `internal/domain/`, `internal/adapters/` layout
-- **Port/adapter pattern**: Infrastructure behind interfaces
-- **Agent framework API**: `NewAgent()`, `NewTaskService()`, hooks pattern
-- **Testing conventions**: Naming, Arrange-Act-Assert, assert library
-- **Error handling**: Typed errors with `Unwrap()` support
+### Customization points
 
-### What Can Be Customized
+| Customization | Location | How |
+|---------------|----------|-----|
+| Add new tools | `internal/domain/tooling/` | Implement `agent.Tool` with `ToolFunc` and `ToolDefinition` |
+| Add use cases | `internal/domain/<context>/` | Create `*UseCase` struct with `Execute()` method |
+| Custom LLM backend | `internal/adapters/outbound/` | Implement `agent.LLMClient` interface |
+| Custom storage | `internal/adapters/outbound/` | Implement `agent.MemoryStore` interface |
+| Custom events | `internal/domain/agent/events.go` | Add event types implementing `event.Event` |
 
-| Customization | Location |
-|---------------|----------|
-| New tools | `internal/domain/tooling/` and `internal/adapters/outbound/tool_executor.go` |
-| New LLM providers | New adapter implementing `LLMClient` in `internal/adapters/outbound/` |
-| New use cases | `internal/domain/<domain>/` |
-| Core agent extensions | `internal/domain/agent/` |
-| Custom hooks | Application code using `WithHooks()` |
-| System prompts | Application configuration |
-| Agent options | `WithMaxIterations()`, `WithMaxMessages()`, etc. |
+### Steps to create a new project from this template
 
-### Steps to Create a New Project
-
-1. **Clone/copy this repository**
+1. **Clone/copy** the repository
 2. **Update module path** in `go.mod`
-3. **Update package imports** throughout
-4. **Customize CLI** in `cmd/cli/main.go` or create new entry points
-5. **Add domain-specific tools** in `tool_executor.go`
-6. **Add domain-specific use cases** in `internal/domain/`
-7. **Update README.md** with project-specific documentation
+3. **Update metadata**: README.md, LICENSE, docker-compose.yml
+4. **Remove example tools** in `internal/domain/tooling/` (or keep as reference)
+5. **Add domain-specific tools** following the established pattern
+6. **Extend use cases** in `internal/domain/chatting/` or create new bounded contexts
+7. **Configure adapters** for your infrastructure (LLM endpoint, storage backend)
 
 ---
 
-## 8. Key Commands & Workflows
+## 8. Key commands & workflows
 
-| Command | Description |
-|---------|-------------|
-| `just bench` | Run performance benchmarks |
-| `just build` | Build Docker image |
-| `just down` | Stop services |
-| `just fmt` | Format Go code |
-| `just lint` | Run linter checks |
-| `just run` | Run CLI application locally |
-| `just setup` | Install development dependencies |
-| `just test` | Run unit tests with coverage |
-| `just test-integration` | Run integration tests (requires LM Studio) |
-| `just up` | Start services with docker-compose |
-
-### Environment Configuration
-
-Copy `.env.example` to `.env` and configure:
+### Development
 
 ```bash
-LM_STUDIO_URL=http://localhost:1234
-LM_STUDIO_MODEL=your-model-name
+# Run CLI with LM Studio
+go run ./cmd/cli -url http://localhost:1234 -model <model-name>
+
+# Run tests
+go test ./...
+
+# Run tests with coverage
+go test -cover ./...
+
+# Run benchmarks
+go test -bench=. ./internal/domain/agent/
+
+# Format code
+go fmt ./...
+
+# Vet code
+go vet ./...
 ```
 
-### CLI Options
+### Build
 
 ```bash
-go run ./cmd/cli \
-    -url http://localhost:1234 \
-    -model <model-name> \
-    -max-iterations 10 \
-    -max-messages 50 \
-    -verbose
+# Build binary
+go build -o go-agent ./cmd/cli
+
+# Build with optimizations (production)
+go build -ldflags "-s -w" -o go-agent ./cmd/cli
+
+# Build with PGO (requires cpuprofile.pprof)
+go build -ldflags "-s -w" -pgo cpuprofile.pprof -o go-agent ./cmd/cli
 ```
+
+### Docker
+
+```bash
+# Build image
+docker build -t go-agent .
+
+# Run with docker-compose
+docker-compose up -d
+
+# View logs
+docker-compose logs -f app
+```
+
+### CLI flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-url` | `http://localhost:1234` | LM Studio API base URL |
+| `-model` | `$LM_STUDIO_MODEL` | Model name |
+| `-max-iterations` | `10` | Max iterations per task |
+| `-max-messages` | `50` | Max messages to retain (0 = unlimited) |
+| `-verbose` | `false` | Show detailed metrics |
 
 ---
 
-## 9. Important Notes & Constraints
+## 9. Important notes & constraints
 
 ### Security
 
-- No secrets in code; use environment variables
-- The library does not handle authentication; adapters should implement as needed
-- Tool execution is sandboxed to registered functions only
+- **No secrets in code**: Use environment variables for API keys
+- Tool execution has timeout protection (default 30s)
+- Consider encrypted conversation store for sensitive data
 
 ### Performance
 
-- `MaxMessages` prevents unbounded memory growth
-- `MaxIterations` prevents infinite loops
-- Profile-Guided Optimization (PGO) supported in Docker builds
+- LLM calls are the bottleneck; tune timeouts appropriately
+- Use `WithParallelToolExecution()` for I/O-bound tool calls
+- Message history trimming prevents unbounded memory growth
 
-### Platform
+### Platform assumptions
 
-- Requires Go 1.25+
-- Docker builds use `scratch` base (minimal image)
-- Designed for OpenAI-compatible APIs (LM Studio, OpenAI, Ollama with adapter)
+- Go 1.25+ (uses latest language features)
+- OpenAI-compatible LLM API (LM Studio, OpenAI, vLLM, etc.)
+- Docker for containerized deployment
 
-### Limitations
+### Known limitations
 
+- Basic text search for memory (no embedding/vector similarity)
 - Single-agent design (no multi-agent orchestration)
-- Synchronous execution (no async tool calls)
-- Demo tools included for reference (production use requires custom tools)
+- Synchronous execution model
 
 ---
 
-## 10. How AI Tools and RAG Should Use This File
+## 10. How AI tools and RAG should use this file
 
-### Priority
+### Priority order for context
 
-This file is the **top-priority context** for repository-wide work. Read it before:
-- Making architectural changes
-- Adding new packages or modules
-- Refactoring existing code
-- Understanding project conventions
+1. **CONTEXT.md** (this file) — Architecture, conventions, contracts
+2. **README.md** — Project purpose, quick start, user-facing docs
+3. **VENDOR.md** — External library usage patterns (if exists)
 
-### Usage Guidelines
+### Instructions for AI agents
 
-1. **Always read `CONTEXT.md` first** before major changes
-2. **Treat rules as constraints** unless explicitly updated
-3. **Reference this file** when documenting architectural decisions
-4. **Cross-reference with**:
-   - [README.md](README.md) for user-facing documentation
-   - [VENDOR.md](VENDOR.md) for approved vendor libraries
-   - [AGENTS.md](AGENTS.md) for AI agent definitions
+- **Read CONTEXT.md first** before making architectural changes
+- **Follow the directory structure contract** when adding new code
+- **Use established patterns**: functional options, interface segregation, typed errors
+- **Check existing implementations** before creating new tools or adapters
+- **Prefer cloud-native-utils** patterns for resilience and efficiency
+- **Update CONTEXT.md** after significant architectural changes
 
-### Agent Collaboration
+### When to reference this file
 
-When making changes:
-1. `coding-assistant` implements code changes
-2. `CONTEXT-maintainer` updates this file if architecture changes
-3. `README-maintainer` updates README.md if user-facing docs change
-4. `VENDOR-maintainer` updates VENDOR.md if dependencies change
-
-See [AGENTS.md](AGENTS.md) for full agent definitions and collaboration patterns.
+- Creating new domain entities or aggregates
+- Adding new use cases or bounded contexts
+- Implementing new adapters
+- Understanding error handling patterns
+- Reviewing code for convention compliance

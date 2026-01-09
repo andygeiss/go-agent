@@ -11,574 +11,370 @@
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/85ef3344ec784fe9b8dd9052e6172b5d)](https://app.codacy.com/gh/andygeiss/go-agent/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 [![Codacy Badge](https://app.codacy.com/project/badge/Coverage/85ef3344ec784fe9b8dd9052e6172b5d)](https://app.codacy.com/gh/andygeiss/go-agent/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_coverage)
 
-A **production-ready** Go library implementing the **Observe → Decide → Act → Update** loop pattern for building LLM-powered applications. Features hexagonal architecture, comprehensive test coverage (~78%), performance benchmarks, and enterprise-grade patterns including encryption, persistence, and resilience.
+A reusable AI agent framework for Go implementing the **observe → decide → act → update** loop pattern for LLM-based task execution.
 
-## Features
+---
 
-- **Conversation Persistence** - Save and restore conversation history with pluggable storage backends
-- **Encryption at Rest** - AES-GCM encryption for sensitive conversation data
-- **Event-Driven** - Domain events for observability and extensibility
-- **Functional Options** - Clean configuration with `With*` option functions
-- **Hooks/Middleware** - Lifecycle callbacks for logging, metrics, authorization
-- **LLM Integration** - OpenAI-compatible API support (works with LM Studio, OpenAI, etc.)
-- **Memory Management** - Configurable message limits to prevent context overflow
-- **Parallel Tool Execution** - Execute multiple tool calls concurrently for improved performance
-- **Reusable Library** - Import `internal/domain/agent` to build LLM-powered applications
-- **Tool Calling** - Extensible tool system with typed parameter definitions
-- **Typed Errors** - Structured error handling with `errors.Is`/`errors.As` support
+## Overview
 
-## Limitations
+**go-agent** provides a clean, production-ready foundation for building AI agents with tool use capabilities in Go. It features:
 
-Before diving in, be aware of these current constraints:
+- 🔄 **Agent Loop Pattern** — Observe → Decide → Act → Update cycle for autonomous task execution
+- 🔧 **Tool Use** — Extensible tool system with type-safe definitions
+- 🛡️ **Built-in Resilience** — Retry, circuit breaker, timeout, and throttling patterns
+- 📡 **Event-Driven** — Observable task lifecycle via domain events
+- 🧠 **Memory System** — Long-term context storage with search capabilities
+- 🏗️ **Hexagonal Architecture** — Clean separation of domain logic and infrastructure
 
-- **Single-Agent Only** - No multi-agent orchestration; one agent per task execution
-- **Synchronous Execution** - Agent loop runs synchronously (no async/streaming responses)
-- **Demo Tools Included** - Built-in tools (`get_current_time`, `calculate`) are for demonstration; add your own for production use
-- **OpenAI-Compatible APIs** - Requires OpenAI-compatible API (LM Studio, OpenAI, Ollama, etc.)
+Works with any OpenAI-compatible API (LM Studio, OpenAI, vLLM, Ollama, etc.).
+
+---
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Architecture](#architecture)
+- [Features](#features)
+- [CLI Usage](#cli-usage)
+- [Creating Custom Tools](#creating-custom-tools)
+- [Configuration](#configuration)
+- [Docker](#docker)
+- [Testing](#testing)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Installation
+
+```bash
+go get github.com/andygeiss/go-agent
+```
+
+**Requirements:** Go 1.25+
+
+---
 
 ## Quick Start
 
-### Prerequisites
-
-- Go 1.25 or higher
-- [just](https://github.com/casey/just) command runner
-- [golangci-lint](https://golangci-lint.run/) for formatting and linting
-- [LM Studio](https://lmstudio.ai/) (or any OpenAI-compatible API) for LLM inference
-
-### Installation
+### Run the CLI Demo
 
 ```bash
 # Clone the repository
 git clone https://github.com/andygeiss/go-agent.git
 cd go-agent
 
-# Install development dependencies
-just setup
+# Start LM Studio (or any OpenAI-compatible server) on localhost:1234
 
-# Copy environment configuration
-cp .env.example .env
+# Run the CLI
+go run ./cmd/cli -model <your-model-name>
 ```
 
-### Running the Agent
-
-```bash
-# Start LM Studio with a model loaded, then:
-just run
-```
-
-This starts an interactive CLI where you can chat with the agent:
-
-```
-🤖 Go Agent Demo - LM Studio Chat
-==================================
-Connecting to LM Studio at: http://localhost:1234
-Using model: default
-Max iterations: 10 | Max messages: 50
-
-Commands: 'quit'/'exit' to stop, 'clear' to reset, 'stats' for agent stats
-
-You: What time is it?
-🤖 Assistant: The current time is 2026-01-08T15:30:45Z.
-
-You: stats
-📊 Agent Statistics
--------------------
-Agent ID:        demo-agent
-Messages:        2
-Tasks:           1 (✓ 1 completed, ✗ 0 failed)
-Max iterations:  10
-Max messages:    50
-
-You: quit
-
-📈 Session summary: 1 tasks (✓ 1, ✗ 0), 2 messages
-Goodbye! 👋
-```
-
-## Project Structure
-
-```
-go-agent/
-├── cmd/cli/                    # CLI application entry point
-├── internal/
-│   ├── adapters/outbound/      # Infrastructure adapters (LLM, tools, events)
-│   └── domain/
-│       ├── agent/              # Core agent framework
-│       │   ├── agent.go            # Agent aggregate with options
-│       │   ├── conversation.go     # Conversation management
-│       │   ├── errors.go           # Typed errors (LLMError, ToolError, TaskError)
-│       │   ├── events.go           # Domain events
-│       │   ├── hooks.go            # Lifecycle hooks
-│       │   ├── llm.go              # LLMClient port and LLMResponse
-│       │   ├── memory.go           # MemoryStore port
-│       │   ├── message.go          # Message entity
-│       │   ├── shared.go           # Shared types and constants
-│       │   ├── task.go             # Task entity
-│       │   ├── task_service.go     # TaskService (agent loop orchestration)
-│       │   ├── tool_call.go        # ToolCall entity
-│       │   ├── tool_definition.go  # ToolDefinition with parameter validation
-│       │   └── tools.go            # ToolExecutor port
-│       ├── openai/             # OpenAI API structures
-│       ├── chatting/           # Chatting domain (SendMessage, ClearConversation, GetAgentStats)
-│       ├── memorizing/         # Memory management domain (WriteNote, SearchNotes, GetNote, DeleteNote)
-│       └── tooling/            # Tooling domain (Calculate, GetCurrentTime)
-```
-
-## Available Commands
-
-| Command | Description |
-|---------|-------------|
-| `just bench` | Run performance benchmarks |
-| `just build` | Build Docker image |
-| `just down` | Stop all services |
-| `just fmt` | Format Go code |
-| `just lint` | Run linter checks |
-| `just run` | Run CLI application locally |
-| `just setup` | Install dependencies (golangci-lint, just) |
-| `just test` | Run unit tests with coverage |
-| `just test-integration` | Run integration tests (requires LM Studio) |
-| `just up` | Start all services (build + docker-compose) |
-
-## Configuration
-
-The agent is configured via environment variables. Copy `.env.example` to `.env` and configure:
-
-```bash
-# LM Studio connection
-LM_STUDIO_URL=http://localhost:1234
-LM_STUDIO_MODEL=your-model-name
-```
-
-### CLI Options
-
-```bash
-go run ./cmd/cli \
-    -url http://localhost:1234 \    # LM Studio API URL
-    -model <model-name> \           # Model to use
-    -max-iterations 10 \            # Max agent loop iterations per task
-    -max-messages 50 \              # Max messages to retain (0=unlimited)
-    -verbose                         # Show detailed metrics after each response
-```
-
-### CLI Commands
-
-| Command | Description |
-|---------|-------------|
-| `clear` | Clear conversation history |
-| `quit` / `exit` | Exit with session summary |
-| `stats` | Show agent statistics |
-
-## Architecture
-
-The project provides a reusable agent library in `internal/domain/agent/`:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Application (CLI)                      │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-┌─────────────────────────────▼───────────────────────────────┐
-│                 internal/domain/agent Library               │
-│  • Agent, Task, Message     • TaskService (Agent Loop)      │
-│  • LLMClient interface      • ToolExecutor interface        │
-└─────────────────────────────┬───────────────────────────────┘
-                              │ implements
-┌─────────────────────────────▼───────────────────────────────┐
-│                    Adapter Layer                            │
-│  • OpenAIClient (LLM)  • ToolExecutor  • EventPublisher     │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Using the Library
-
-```go
-import (
-    "github.com/andygeiss/go-agent/internal/domain/agent"
-)
-
-// Create agent infrastructure
-taskService := agent.NewTaskService(llmClient, toolExecutor, publisher)
-
-// Optional: Add hooks for logging/metrics
-hooks := agent.NewHooks().
-    WithAfterToolCall(func(ctx context.Context, ag *agent.Agent, tc *agent.ToolCall) error {
-        log.Printf("Tool %s executed: %s", tc.Name, tc.Result)
-        return nil
-    })
-taskService.WithHooks(hooks)
-
-// Optional: Enable parallel tool execution
-taskService.WithParallelToolExecution()
-
-// Create agent with options
-ag := agent.NewAgent("my-agent", "You are a helpful assistant",
-    agent.WithMaxIterations(20),
-    agent.WithMaxMessages(100),
-    agent.WithMetadata(agent.Metadata{"version": "1.0"}),
-)
-
-// Run a task
-task := agent.NewTask("task-1", "chat", "Hello!")
-result, err := taskService.RunTask(ctx, &ag, task)
-
-// Access execution metrics
-fmt.Printf("Completed in %s with %d iterations, %d tool calls\n",
-    result.Duration, result.IterationCount, result.ToolCallCount)
-```
-
-The agent operates in a continuous loop:
-1. **Observe** - Gather current state and conversation history
-2. **Decide** - Call LLM with context and available tools
-3. **Act** - Execute tool calls if requested
-4. **Update** - Update state and continue or complete
-
-For detailed architectural documentation, see [CONTEXT.md](CONTEXT.md).
-
-### Complete Integration Example
-
-Here's a full, copy-paste-ready example embedding the agent library in a Go service with hooks, conversation persistence, and a custom tool:
+### Use as a Library
 
 ```go
 package main
 
 import (
     "context"
-    "encoding/json"
-    "fmt"
-    "log"
-    "net/http"
-    "time"
-
+    "github.com/andygeiss/cloud-native-utils/messaging"
     "github.com/andygeiss/go-agent/internal/adapters/outbound"
     "github.com/andygeiss/go-agent/internal/domain/agent"
+    "github.com/andygeiss/go-agent/internal/domain/tooling"
 )
 
 func main() {
-    ctx := context.Background()
-
-    // 1. Create LLM client (OpenAI-compatible API)
-    llmClient := outbound.NewOpenAIClient("http://localhost:1234", "default")
-
-    // 2. Create tool executor and register a custom tool
+    // Create infrastructure
+    dispatcher := messaging.NewExternalDispatcher()
+    llmClient := outbound.NewOpenAIClient("http://localhost:1234", "your-model")
     toolExecutor := outbound.NewToolExecutor()
-    toolExecutor.RegisterTool("weather", func(ctx context.Context, args string) (string, error) {
-        var params struct {
-            City string `json:"city"`
-        }
-        if err := json.Unmarshal([]byte(args), &params); err != nil {
-            return "", err
-        }
-        // Replace with actual weather API call
-        return fmt.Sprintf("Weather in %s: 22°C, Sunny", params.City), nil
-    })
+    publisher := outbound.NewEventPublisher(dispatcher)
 
-    // 3. Create event publisher (optional, for observability)
-    publisher := outbound.NewEventPublisher()
+    // Register tools
+    calcTool := tooling.NewCalculateTool()
+    toolExecutor.RegisterTool("calculate", calcTool.Func)
+    toolExecutor.RegisterToolDefinition(calcTool.Definition)
 
-    // 4. Set up conversation persistence
-    store := outbound.NewJsonFileConversationStore("conversations.json")
-
-    // 5. Create task service with hooks
-    taskService := agent.NewTaskService(llmClient, toolExecutor, publisher)
-    
-    hooks := agent.NewHooks().
-        WithBeforeTask(func(ctx context.Context, ag *agent.Agent, task *agent.Task) error {
-            // Load previous conversation
-            messages, _ := store.Load(ctx, ag.ID)
-            for _, msg := range messages {
-                ag.AddMessage(msg)
-            }
-            log.Printf("Task started: %s (loaded %d messages)", task.ID, len(messages))
-            return nil
-        }).
-        WithAfterTask(func(ctx context.Context, ag *agent.Agent, task *agent.Task) error {
-            // Save conversation
-            if err := store.Save(ctx, ag.ID, ag.Messages()); err != nil {
-                log.Printf("Failed to save conversation: %v", err)
-            }
-            log.Printf("Task completed: %s in %s", task.ID, task.Duration())
-            return nil
-        }).
-        WithAfterToolCall(func(ctx context.Context, ag *agent.Agent, tc *agent.ToolCall) error {
-            log.Printf("Tool executed: %s -> %s", tc.Name, tc.Result)
-            return nil
-        })
-    
-    taskService.WithHooks(hooks).WithParallelToolExecution()
-
-    // 6. Create agent
-    ag := agent.NewAgent("service-agent", "You are a helpful assistant with weather capabilities.",
+    // Create agent
+    ag := agent.NewAgent("my-agent", "You are a helpful assistant.",
         agent.WithMaxIterations(10),
         agent.WithMaxMessages(50),
     )
 
-    // 7. Run a task
-    task := agent.NewTask("task-1", "chat", "What's the weather in Berlin?")
-    result, err := taskService.RunTask(ctx, &ag, task)
-    if err != nil {
-        log.Fatalf("Task failed: %v", err)
-    }
-
-    fmt.Printf("Response: %s\n", result.FinalAnswer)
-    fmt.Printf("Stats: %d iterations, %d tool calls, %s duration\n",
-        result.IterationCount, result.ToolCallCount, result.Duration)
+    // Create task service and run
+    taskService := agent.NewTaskService(llmClient, toolExecutor, publisher)
+    task := agent.NewTask("task-1", "chat", "What is 42 * 17?")
+    
+    result, _ := taskService.RunTask(context.Background(), &ag, task)
+    println(result.Output)
 }
 ```
 
-### Custom Tool with Full Parameter Definition
+---
 
-For more control over tool parameters exposed to the LLM, extend `GetToolDefinitions`:
+## Architecture
 
-```go
-// Custom tool executor with typed parameter definitions
-type MyToolExecutor struct {
-    *outbound.ToolExecutor
-}
+The project follows **hexagonal architecture** (ports and adapters) with domain-driven design:
 
-func NewMyToolExecutor() *MyToolExecutor {
-    te := &MyToolExecutor{ToolExecutor: outbound.NewToolExecutor()}
-    te.RegisterTool("search", te.search)
-    return te
-}
-
-func (e *MyToolExecutor) search(ctx context.Context, args string) (string, error) {
-    var params struct {
-        Query string `json:"query"`
-        Limit int    `json:"limit"`
-    }
-    if err := json.Unmarshal([]byte(args), &params); err != nil {
-        return "", err
-    }
-    if params.Limit == 0 {
-        params.Limit = 10
-    }
-    // Perform search...
-    return fmt.Sprintf("Found %d results for '%s'", params.Limit, params.Query), nil
-}
-
-func (e *MyToolExecutor) GetToolDefinitions() []agent.ToolDefinition {
-    // Include base tools plus custom ones
-    defs := e.ToolExecutor.GetToolDefinitions()
-    defs = append(defs,
-        agent.NewToolDefinition("search", "Search for information").
-            WithParameterDef(agent.NewParameterDefinition("query", agent.ParamTypeString).
-                WithDescription("The search query").
-                WithRequired()).
-            WithParameterDef(agent.NewParameterDefinition("limit", agent.ParamTypeInteger).
-                WithDescription("Maximum results to return").
-                WithDefault("10")),
-    )
-    return defs
-}
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         cmd/cli                                 │
+│                    (Application Entry)                          │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────────┐
+│                     internal/domain                             │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │ agent/        Core aggregate, task service, types           ││
+│  │ chatting/     Use cases: SendMessage, ClearConversation     ││
+│  │ memorizing/   Use cases: WriteNote, SearchNotes             ││
+│  │ tooling/      Tool implementations                          ││
+│  └─────────────────────────────────────────────────────────────┘│
+└──────────────────────────────┬──────────────────────────────────┘
+                               │ depends on interfaces (ports)
+┌──────────────────────────────▼──────────────────────────────────┐
+│                   internal/adapters/outbound                    │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │ openai_client.go    LLMClient implementation                ││
+│  │ tool_executor.go    ToolExecutor implementation             ││
+│  │ event_publisher.go  EventPublisher implementation           ││
+│  │ memory_store.go     MemoryStore implementation              ││
+│  └─────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Built-in Tools
+### Agent Loop
 
-The agent includes functional demo tools:
+The core agent implements an iterative loop:
+
+1. **Observe** — Receive user input, build message context
+2. **Decide** — Call LLM with messages and available tools
+3. **Act** — Execute any tool calls requested by the LLM
+4. **Update** — Add results to conversation, check termination
+5. **Repeat** — Continue until task completes or max iterations reached
+
+For detailed architecture documentation, see [CONTEXT.md](CONTEXT.md).
+
+---
+
+## Features
+
+### Built-in Tools
 
 | Tool | Description |
 |------|-------------|
-| `calculate` | Evaluates arithmetic expressions with +, -, *, / and parentheses |
-| `get_current_time` | Returns the current date and time in RFC3339 format |
+| `calculate` | Safe arithmetic expression evaluator |
+| `get_current_time` | Returns current date and time |
+| Memory tools | Read/write/search long-term memory |
 
-**Note**: These tools are for demonstration. For production use, register your own domain-specific tools.
+### Resilience Patterns
 
-### Adding Custom Tools
+The `OpenAIClient` includes configurable resilience:
 
-Register new tools in `internal/adapters/outbound/tool_executor.go`:
+- **Timeout**: HTTP (60s) and LLM call (120s) timeouts
+- **Retry**: 3 attempts with 2s delay
+- **Circuit Breaker**: Opens after 5 consecutive failures
+- **Throttling**: Rate limiting (disabled by default)
 
-```go
-executor.RegisterTool("my_tool", func(ctx context.Context, args string) (string, error) {
-    // Parse args (JSON) and execute
-    return "result", nil
-})
-```
-
-Define tool parameters with types:
-
-```go
-toolDef := agent.NewToolDefinition("my_tool", "Description of my tool").
-    WithParameterDef(agent.NewParameterDefinition("query", agent.ParamTypeString).
-        WithDescription("The search query").
-        WithRequired()).
-    WithParameterDef(agent.NewParameterDefinition("limit", agent.ParamTypeInteger).
-        WithDescription("Max results").
-        WithDefault("10"))
-```
-
-### Parallel Tool Execution
-
-When the LLM returns multiple tool calls in a single response, execute them concurrently:
-
-```go
-// Enable parallel execution for improved performance with I/O-bound tools
-taskService := agent.NewTaskService(llmClient, toolExecutor, publisher).
-    WithParallelToolExecution()
-
-// Without parallel execution: tools run sequentially (default)
-// With parallel execution: tools run concurrently using efficiency.Process
-```
-
-**Note**: Parallel execution provides significant benefits for I/O-bound tools (API calls, file operations) but adds coordination overhead for CPU-bound operations.
-
-### Error Handling
-
-The library provides typed errors for robust error handling:
-
-```go
-result, err := taskService.RunTask(ctx, &ag, task)
-if err != nil {
-    // Check for specific error types
-    if errors.Is(err, agent.ErrMaxIterationsReached) {
-        log.Println("Task exceeded iteration limit")
-    }
-    
-    var toolErr *agent.ToolError
-    if errors.As(err, &toolErr) {
-        log.Printf("Tool %s failed: %s", toolErr.ToolName, toolErr.Message)
-    }
-}
-```
-
-### Hooks/Middleware
-
-Add cross-cutting concerns without modifying core logic:
+### Lifecycle Hooks
 
 ```go
 hooks := agent.NewHooks().
-    WithBeforeTask(func(ctx context.Context, ag *agent.Agent, task *agent.Task) error {
-        log.Printf("Starting task: %s", task.ID)
-        return nil
-    }).
-    WithAfterTask(func(ctx context.Context, ag *agent.Agent, task *agent.Task) error {
-        log.Printf("Task completed in %s", task.Duration())
-        return nil
-    }).
-    WithBeforeLLMCall(func(ctx context.Context, ag *agent.Agent, task *agent.Task) error {
-        // Rate limiting, logging, etc.
+    WithBeforeTask(func(ctx context.Context, ag *agent.Agent, t *agent.Task) error {
+        log.Println("Starting task:", t.Name)
         return nil
     }).
     WithAfterToolCall(func(ctx context.Context, ag *agent.Agent, tc *agent.ToolCall) error {
-        // Log tool execution, cache results, etc.
+        log.Println("Tool executed:", tc.Name, "→", tc.Result)
         return nil
     })
 
 taskService.WithHooks(hooks)
 ```
 
-### Conversation Persistence
+### Domain Events
 
-Save and restore conversation history with pluggable storage backends:
+Subscribe to task lifecycle events:
 
-```go
-import (
-    "github.com/andygeiss/go-agent/internal/adapters/outbound"
-)
+- `agent.task.started` — Task begins execution
+- `agent.task.completed` — Task finishes successfully
+- `agent.task.failed` — Task terminates with error
+- `agent.toolcall.executed` — Tool call completes
 
-// In-memory storage (for testing)
-store := outbound.NewInMemoryConversationStore()
+---
 
-// JSON file storage (for production)
-store := outbound.NewJsonFileConversationStore("conversations.json")
+## CLI Usage
 
-// Save conversation
-ctx := context.Background()
-err := store.Save(ctx, agent.AgentID("my-agent"), messages)
-
-// Load conversation
-messages, err := store.Load(ctx, agent.AgentID("my-agent"))
-
-// Clear conversation
-err := store.Clear(ctx, agent.AgentID("my-agent"))
+```bash
+go run ./cmd/cli [flags]
 ```
 
-### Encrypted Storage
+### Flags
 
-Protect sensitive conversation data with AES-GCM encryption:
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-url` | `http://localhost:1234` | LLM API base URL |
+| `-model` | `$LM_STUDIO_MODEL` | Model name |
+| `-max-iterations` | `10` | Max iterations per task |
+| `-max-messages` | `50` | Max messages to retain (0 = unlimited) |
+| `-verbose` | `false` | Show detailed metrics |
+
+### Commands (during chat)
+
+| Command | Description |
+|---------|-------------|
+| `quit` / `exit` | Exit the CLI |
+| `clear` | Reset conversation history |
+| `stats` | Show agent statistics |
+
+---
+
+## Creating Custom Tools
 
 ```go
+package tooling
+
 import (
-    "github.com/andygeiss/cloud-native-utils/security"
-    "github.com/andygeiss/go-agent/internal/adapters/outbound"
+    "context"
+    "github.com/andygeiss/go-agent/internal/domain/agent"
 )
 
-// Generate a 32-byte encryption key (store securely!)
-key := security.GenerateKey()
+// Define the tool
+func NewMyTool() agent.Tool {
+    return agent.Tool{
+        ID: "my_tool",
+        Definition: agent.NewToolDefinition("my_tool", "Description of what it does").
+            WithParameter("input", "The input parameter"),
+        Func: MyToolFunc,
+    }
+}
 
-// Create encrypted store
-baseStore := outbound.NewJsonFileConversationStore("conversations.json")
-encStore := outbound.NewEncryptedConversationStore(baseStore, key)
-
-// Use like any ConversationStore - encryption/decryption is automatic
-err := encStore.Save(ctx, agentID, messages)
-messages, err := encStore.Load(ctx, agentID)
+// Implement the function
+func MyToolFunc(ctx context.Context, arguments string) (string, error) {
+    var args struct {
+        Input string `json:"input"`
+    }
+    if err := agent.DecodeArgs(arguments, &args); err != nil {
+        return "", err
+    }
+    
+    // Your tool logic here
+    return "result", nil
+}
 ```
+
+Register the tool:
+
+```go
+myTool := tooling.NewMyTool()
+executor.RegisterTool("my_tool", myTool.Func)
+executor.RegisterToolDefinition(myTool.Definition)
+```
+
+---
+
+## Configuration
+
+### Agent Options
+
+```go
+agent.NewAgent("id", "system prompt",
+    agent.WithMaxIterations(20),      // Max loop iterations per task
+    agent.WithMaxMessages(100),       // Message history limit (0 = unlimited)
+    agent.WithMetadata(agent.Metadata{
+        "model": "gpt-4",
+        "user":  "alice",
+    }),
+)
+```
+
+### LLM Client Options
+
+```go
+client := outbound.NewOpenAIClient(baseURL, model).
+    WithLLMTimeout(180 * time.Second).
+    WithRetry(5, 3*time.Second).
+    WithCircuitBreaker(10).
+    WithThrottle(100, 10, time.Second)  // tokens, refill, period
+```
+
+### Task Service Options
+
+```go
+taskService := agent.NewTaskService(llm, executor, publisher).
+    WithHooks(hooks).
+    WithParallelToolExecution()  // Enable parallel tool calls
+```
+
+---
+
+## Docker
+
+### Build
+
+```bash
+docker build -t go-agent .
+```
+
+### Run with Docker Compose
+
+```bash
+# Create .env file with required variables
+echo "APP_SHORTNAME=go-agent" > .env
+echo "USER=$(whoami)" >> .env
+
+# Start services
+docker-compose up -d
+```
+
+---
 
 ## Testing
 
 ```bash
-# Run all unit tests
-just test
+# Run all tests
+go test ./...
 
-# Run with verbose output
-go test -v ./internal/...
-
-# Run integration tests (requires LM Studio running)
-just test-integration
+# Run with coverage
+go test -cover ./...
 
 # Run benchmarks
-just bench
+go test -bench=. ./internal/domain/agent/
 ```
 
-### Benchmarks
+---
 
-Performance benchmarks for core operations:
+## Project Structure
 
-| Benchmark | Time/op | Allocs/op |
-|-----------|---------|-----------|
-| `Agent_Create` | ~45ns | 2 |
-| `DirectCompletion` | ~500ns | 11 |
-| `Event_Create` | ~1.6ns | 0 |
-| `Message_Create` | ~2ns | 0 |
-| `MultipleToolCalls_Parallel` | ~8.7µs | 44 |
-| `MultipleToolCalls_Sequential` | ~925ns | 20 |
-| `SingleToolCall` | ~727ns | 17 |
-
-*Measured on Apple M4 Pro. Parallel execution shows higher overhead in synthetic benchmarks but provides real benefits with I/O-bound tool operations.*
-
-## Docker
-
-```bash
-# Build the image
-just build
-
-# Run with docker-compose
-just up
-
-# Stop services
-just down
 ```
+go-agent/
+├── cmd/cli/              # CLI application
+├── internal/
+│   ├── adapters/outbound/  # Infrastructure implementations
+│   └── domain/
+│       ├── agent/          # Core domain (Agent, Task, Message)
+│       ├── chatting/       # Chat use cases
+│       ├── memorizing/     # Memory use cases
+│       ├── tooling/        # Tool implementations
+│       └── openai/         # OpenAI API types
+├── AGENTS.md             # AI agent definitions
+├── CONTEXT.md            # Architecture documentation
+├── Dockerfile
+└── docker-compose.yml
+```
+
+---
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Follow the coding conventions in [CONTEXT.md](CONTEXT.md)
-4. Run `just fmt` and `just lint` before committing
-5. Add tests for new functionality
-6. Submit a pull request
+1. Read [CONTEXT.md](CONTEXT.md) for architecture and conventions
+2. Follow the hexagonal architecture pattern
+3. Add tests for new functionality
+4. Run `go fmt ./...` and `go vet ./...` before committing
+
+---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Related Documentation
-
-- [AGENTS.md](AGENTS.md) — AI agent definitions for this repository
-- [CONTEXT.md](CONTEXT.md) — Architecture, conventions, and project contracts
-- [VENDOR.md](VENDOR.md) — Approved vendor libraries and usage patterns
-
-## Acknowledgments
-
-- Built with [Go](https://go.dev)
-- Architecture inspired by [Hexagonal Architecture](https://alistair.cockburn.us/hexagonal-architecture/) and [Domain-Driven Design](https://www.domainlanguage.com/ddd/)
+[MIT License](LICENSE)
