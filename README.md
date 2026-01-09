@@ -114,7 +114,6 @@ go-agent/
 │   │   ├── ports_outbound.go   # Interfaces (LLMClient, ToolExecutor)
 │   │   ├── service.go          # Hooks, TaskService (agent loop orchestration)
 │   │   └── value_objects.go    # ID types, Result, Role/Status constants
-│   ├── event/                  # Event interfaces
 │   └── openai/                 # OpenAI API structures
 ```
 

@@ -84,8 +84,7 @@ The project follows **Hexagonal Architecture** (Ports and Adapters) combined wit
 | `cmd/` | Application entry, configuration | Domain, pkg/agent |
 | `internal/domain/` | Use cases, business rules | pkg/agent (via ports) |
 | `internal/adapters/` | Infrastructure implementations | pkg/agent ports, external APIs |
-| `pkg/agent/` | Core library, domain model | pkg/event (interfaces only) |
-| `pkg/event/` | Event interfaces | None |
+| `pkg/agent/` | Core library, domain model | cloud-native-utils/event (interfaces only) |
 | `pkg/openai/` | OpenAI API data structures | None |
 
 ---
@@ -128,12 +127,6 @@ go-agent/
 │   │   ├── ports_outbound.go   # LLMClient, ToolExecutor, EventPublisher, ConversationStore interfaces
 │   │   ├── service.go          # Hooks, TaskService (agent loop orchestration)
 │   │   └── value_objects.go    # ID types, Result, TokenUsage, Role/Status constants
-│   ├── event/                  # Event infrastructure interfaces
-│   │   ├── event.go            # Event interface (Topic())
-│   │   ├── event_factory.go    # Factory function type
-│   │   ├── event_handler.go    # Handler function type
-│   │   ├── event_publisher.go  # Publisher interface
-│   │   └── event_subscriber.go # Subscriber interface
 │   └── openai/                 # OpenAI API data structures
 │       ├── chat_completion_*.go # Request/response types
 │       ├── message.go          # Chat message format
@@ -157,7 +150,6 @@ go-agent/
 | Core agent library extensions | `pkg/agent/` |
 | New domain events | `pkg/agent/events.go` |
 | OpenAI API structures | `pkg/openai/` |
-| Event infrastructure | `pkg/event/` |
 | Tests | Same directory as source, `*_test.go` |
 
 ---

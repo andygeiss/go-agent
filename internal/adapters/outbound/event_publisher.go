@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/andygeiss/cloud-native-utils/event"
 	"github.com/andygeiss/cloud-native-utils/messaging"
-	"github.com/andygeiss/go-agent/pkg/event"
 )
 
 // This file contains the implementation of the EventPublisher.

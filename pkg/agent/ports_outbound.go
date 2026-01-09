@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 
-	"github.com/andygeiss/go-agent/pkg/event"
+	"github.com/andygeiss/cloud-native-utils/event"
 )
 
 // ConversationStore is the interface for persisting conversation history.

@@ -12,7 +12,7 @@ This document catalogs the external vendor libraries used in this project, expla
 
 - **Purpose**: A modular Go library providing reusable utilities for cloud-native applications. In this project, we primarily use the `assert` package for testing.
 - **Repository**: https://github.com/andygeiss/cloud-native-utils
-- **Version**: v0.4.11
+- **Version**: v0.4.12
 
 #### Key Packages Used
 
@@ -20,6 +20,7 @@ This document catalogs the external vendor libraries used in this project, expla
 |---------|-------------|---------|
 | `assert` | Minimal test assertion helper | All `*_test.go` files |
 | `efficiency` | Parallel processing (Generate, Process) | `pkg/agent/task_service.go` |
+| `event` | Event interfaces (Event, Publisher, Subscriber, Handler, Factory) | `pkg/agent/ports_outbound.go`, `adapters/outbound/event_publisher.go` |
 | `logging` | Structured JSON logging via `log/slog` | `adapters/outbound/openai_client.go`, `adapters/outbound/tool_executor.go` |
 | `messaging` | Message dispatcher for event publishing | `adapters/outbound/event_publisher.go` |
 | `resource` | Generic CRUD storage (InMemory, JsonFile, etc.) | `adapters/outbound/conversation_store.go` |
@@ -32,6 +33,7 @@ This document catalogs the external vendor libraries used in this project, expla
 
 - **Testing assertions**: Use `assert.That(t, description, actual, expected)` for all test assertions
 - **Structured logging**: Use `logging.NewJsonLogger()` for JSON-formatted logs with level control
+- **Event interfaces**: Use `event.Event` for domain events that can be published/subscribed
 - **Event publishing**: Use `messaging.Dispatcher` for publishing domain events
 - **Slice transformations**: Use `slices.Filter`, `slices.Map`, `slices.Unique` for collection operations
 - **Resilience patterns**: Use `stability.Timeout`, `stability.Retry`, `stability.Breaker`, `stability.Debounce` for external API calls
@@ -47,6 +49,7 @@ This document catalogs the external vendor libraries used in this project, expla
 - Don't use external logging libraries (logrus, zap) — use `log/slog` via `logging.NewJsonLogger()`
 - Don't write manual filter/map loops — use `slices.Filter`, `slices.Map` instead
 - Don't implement custom storage backends — use `resource.Access` implementations
+- Don't define custom event interfaces — use `cloud-native-utils/event` types
 
 #### Integration Patterns
 

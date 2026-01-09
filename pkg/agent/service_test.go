@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/andygeiss/cloud-native-utils/assert"
+	"github.com/andygeiss/cloud-native-utils/event"
 	"github.com/andygeiss/go-agent/pkg/agent"
-	"github.com/andygeiss/go-agent/pkg/event"
 )
 
 // mockLLMClient implements agent.LLMClient for testing.

@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/andygeiss/cloud-native-utils/event"
 	"github.com/andygeiss/go-agent/internal/domain/chatting"
 	"github.com/andygeiss/go-agent/pkg/agent"
-	"github.com/andygeiss/go-agent/pkg/event"
 )
 
 // Benchmarks for Profile-Guided Optimization (PGO).
