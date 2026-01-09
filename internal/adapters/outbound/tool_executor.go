@@ -10,7 +10,7 @@ import (
 	"github.com/andygeiss/go-agent/internal/domain/agent"
 )
 
-// Default configuration for tool execution.
+// Default configuration for tool execution (alphabetically sorted).
 const (
 	defaultToolTimeout = 30 * time.Second // Maximum time for a tool to execute
 )
@@ -19,8 +19,8 @@ const (
 // It provides tool registration and execution with timeout protection.
 // Tool execution is wrapped with timeout to prevent runaway tools.
 type ToolExecutor struct {
-	tools       map[string]agent.ToolFunc
 	logger      *slog.Logger
+	tools       map[string]agent.ToolFunc
 	definitions []agent.ToolDefinition
 	toolTimeout time.Duration
 }

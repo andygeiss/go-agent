@@ -18,17 +18,17 @@ import (
 	"github.com/andygeiss/go-agent/internal/domain/openai"
 )
 
-// Default configuration for LLM client resilience.
+// Default configuration for LLM client resilience (alphabetically sorted).
 const (
+	defaultBreakerThresh  = 5                 // Circuit breaker failure threshold
+	defaultDebouncePeriod = 0                 // Debounce disabled by default (0 = no debounce)
 	defaultHTTPTimeout    = 60 * time.Second  // HTTP client timeout
 	defaultLLMTimeout     = 120 * time.Second // LLM call timeout (longer for complex prompts)
 	defaultRetryAttempts  = 3                 // Number of retry attempts
 	defaultRetryDelay     = 2 * time.Second   // Delay between retries
-	defaultBreakerThresh  = 5                 // Circuit breaker failure threshold
-	defaultThrottleTokens = 0                 // Throttle disabled by default (0 = no limit)
-	defaultThrottleRefill = 1                 // Tokens to refill per period
 	defaultThrottlePeriod = time.Second       // Refill period
-	defaultDebouncePeriod = 0                 // Debounce disabled by default (0 = no debounce)
+	defaultThrottleRefill = 1                 // Tokens to refill per period
+	defaultThrottleTokens = 0                 // Throttle disabled by default (0 = no limit)
 )
 
 // The adapter translates between domain types (agent.Message, agent.ToolCall)
@@ -42,14 +42,14 @@ type OpenAIClient struct {
 	logger         *slog.Logger
 	baseURL        string
 	model          string
+	debouncePeriod time.Duration
 	llmTimeout     time.Duration
 	retryDelay     time.Duration
 	throttlePeriod time.Duration
-	debouncePeriod time.Duration
-	retryAttempts  int
 	breakerThresh  int
-	throttleTokens uint
+	retryAttempts  int
 	throttleRefill uint
+	throttleTokens uint
 }
 
 // NewOpenAIClient creates a new OpenAIClient instance with sensible defaults.
@@ -62,19 +62,19 @@ type OpenAIClient struct {
 // - Debounce: disabled by default (set via WithDebounce).
 func NewOpenAIClient(baseURL, model string) *OpenAIClient {
 	return &OpenAIClient{
-		baseURL: baseURL,
-		model:   model,
 		httpClient: &http.Client{
 			Timeout: defaultHTTPTimeout,
 		},
-		llmTimeout:     defaultLLMTimeout,
-		retryAttempts:  defaultRetryAttempts,
-		retryDelay:     defaultRetryDelay,
-		breakerThresh:  defaultBreakerThresh,
-		throttleTokens: defaultThrottleTokens,
-		throttleRefill: defaultThrottleRefill,
-		throttlePeriod: defaultThrottlePeriod,
+		baseURL:        baseURL,
+		model:          model,
 		debouncePeriod: defaultDebouncePeriod,
+		llmTimeout:     defaultLLMTimeout,
+		retryDelay:     defaultRetryDelay,
+		throttlePeriod: defaultThrottlePeriod,
+		breakerThresh:  defaultBreakerThresh,
+		retryAttempts:  defaultRetryAttempts,
+		throttleRefill: defaultThrottleRefill,
+		throttleTokens: defaultThrottleTokens,
 	}
 }
 

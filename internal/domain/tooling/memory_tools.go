@@ -10,13 +10,13 @@ import (
 
 // memoryWriteArgs represents the arguments for the memory_write tool.
 type memoryWriteArgs struct {
-	SourceType         string   `json:"source_type"`
-	RawContent         string   `json:"raw_content"`
-	Summary            string   `json:"summary"`
 	ContextDescription string   `json:"context_description"`
-	UserID             string   `json:"user_id,omitempty"`
+	RawContent         string   `json:"raw_content"`
 	SessionID          string   `json:"session_id,omitempty"`
+	SourceType         string   `json:"source_type"`
+	Summary            string   `json:"summary"`
 	TaskID             string   `json:"task_id,omitempty"`
+	UserID             string   `json:"user_id,omitempty"`
 	Keywords           []string `json:"keywords"`
 	Tags               []string `json:"tags"`
 	Importance         int      `json:"importance"`
@@ -25,9 +25,9 @@ type memoryWriteArgs struct {
 // memorySearchArgs represents the arguments for the memory_search tool.
 type memorySearchArgs struct {
 	Query     string   `json:"query"`
-	UserID    string   `json:"user_id,omitempty"`
 	SessionID string   `json:"session_id,omitempty"`
 	TaskID    string   `json:"task_id,omitempty"`
+	UserID    string   `json:"user_id,omitempty"`
 	Tags      []string `json:"tags,omitempty"`
 	Limit     int      `json:"limit,omitempty"`
 }
@@ -39,10 +39,10 @@ type memoryGetArgs struct {
 
 // memorySearchResult represents a single search result for JSON output.
 type memorySearchResult struct {
-	ID                 string   `json:"id"`
-	Summary            string   `json:"summary"`
 	ContextDescription string   `json:"context_description"`
+	ID                 string   `json:"id"`
 	SourceType         string   `json:"source_type"`
+	Summary            string   `json:"summary"`
 	Tags               []string `json:"tags"`
 	Importance         int      `json:"importance"`
 }
@@ -50,17 +50,17 @@ type memorySearchResult struct {
 // MemoryToolService provides memory tool implementations.
 // It requires a MemoryStore to be injected for actual storage.
 type MemoryToolService struct {
-	store   agent.MemoryStore
 	idGen   func() string
-	userID  string
 	session string
+	store   agent.MemoryStore
+	userID  string
 }
 
 // NewMemoryToolService creates a new memory tool service.
 func NewMemoryToolService(store agent.MemoryStore, idGenerator func() string) *MemoryToolService {
 	return &MemoryToolService{
-		store: store,
 		idGen: idGenerator,
+		store: store,
 	}
 }
 
@@ -157,12 +157,12 @@ func (s *MemoryToolService) MemorySearch(ctx context.Context, arguments string) 
 	results := make([]memorySearchResult, len(notes))
 	for i, note := range notes {
 		results[i] = memorySearchResult{
-			ID:                 string(note.ID),
-			Summary:            note.Summary,
-			ContextDescription: note.ContextDescription,
 			Tags:               note.Tags,
-			Importance:         note.Importance,
+			ContextDescription: note.ContextDescription,
+			ID:                 string(note.ID),
 			SourceType:         string(note.SourceType),
+			Summary:            note.Summary,
+			Importance:         note.Importance,
 		}
 	}
 

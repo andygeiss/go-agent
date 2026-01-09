@@ -11,7 +11,7 @@ import (
 // ParameterType represents the JSON schema type of a tool parameter.
 type ParameterType string
 
-// Supported parameter types for tool definitions.
+// Supported parameter types for tool definitions (alphabetically sorted).
 const (
 	ParamTypeArray   ParameterType = "array"
 	ParamTypeBoolean ParameterType = "boolean"
@@ -84,10 +84,10 @@ func NewToolDefinition(name string, description string) ToolDefinition {
 // For more control, use WithParameterDef instead.
 func (td ToolDefinition) WithParameter(name string, description string) ToolDefinition {
 	td.Parameters = append(td.Parameters, ParameterDefinition{
-		Name:        name,
 		Description: description,
-		Type:        ParamTypeString,
+		Name:        name,
 		Required:    false,
+		Type:        ParamTypeString,
 	})
 	return td
 }
@@ -256,8 +256,9 @@ func validateType(paramType ParameterType, value any) string {
 		return validateObject(value)
 	case ParamTypeString:
 		return validateString(value)
+	default:
+		return ""
 	}
-	return ""
 }
 
 func validateArray(value any) string {

@@ -30,12 +30,12 @@ func NewGetAgentStatsUseCase(ag *agent.Agent) *GetAgentStatsUseCase {
 func (uc *GetAgentStatsUseCase) Execute() AgentStats {
 	return AgentStats{
 		AgentID:        string(uc.agent.ID),
-		MessageCount:   uc.agent.MessageCount(),
-		TaskCount:      uc.agent.TaskCount(),
+		Model:          uc.agent.GetMetadata("model"),
 		CompletedTasks: uc.agent.CompletedTaskCount(),
 		FailedTasks:    uc.agent.FailedTaskCount(),
 		MaxIterations:  uc.agent.MaxIterations,
 		MaxMessages:    uc.agent.MaxMessages,
-		Model:          uc.agent.GetMetadata("model"),
+		MessageCount:   uc.agent.MessageCount(),
+		TaskCount:      uc.agent.TaskCount(),
 	}
 }

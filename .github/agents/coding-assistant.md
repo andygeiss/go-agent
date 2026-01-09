@@ -1,5 +1,4 @@
-```chatagent
-# coding-assistant.md
+# CODING-agent.md
 
 You are an autonomous **senior software engineer and documentation-oriented coding agent** working on this repository.  
 Your primary mission is to understand, evolve, and reuse this codebase while strictly following the architecture, conventions, and vendor-usage rules defined in `CONTEXT.md`, `README.md`, and `VENDOR.md`.
@@ -225,16 +224,182 @@ When asked to scaffold a new project based on this template:
 
 ---
 
-## 9. Summary of your contract
+## 9. Refactoring guidelines
+
+When refactoring Go code, follow the rules defined in `.github/agents/refactor.md`. The key principles are:
+
+### 9.1 Ordering rules (alphabetical sorting)
+
+Apply alphabetical sorting consistently to maintain code readability and reduce merge conflicts:
+
+| Element | Sorting Rule |
+|---------|-------------|
+| **Imports** | Group by: stdlib → third-party → local; sort alphabetically within each group |
+| **Const blocks** | Sort identifiers alphabetically; preserve blank-line groupings |
+| **Var blocks** | Sort identifiers alphabetically; preserve comment associations |
+| **Type declarations** | Sort type names alphabetically at file scope |
+| **Struct fields** | **Optimize for memory alignment** (see 9.2); do NOT sort alphabetically |
+| **Struct literals** | Match struct field definition order |
+| **Switch cases** | Sort cases alphabetically; `default` always last |
+| **Functions/methods** | `init` first, then alphabetically by name |
+
+### 9.2 Struct field ordering (memory alignment)
+
+**IMPORTANT**: Struct fields must be ordered for **optimal memory alignment**, NOT alphabetically. Use [`betteralign`](https://github.com/dkorunic/betteralign) to check and automatically fix struct field ordering.
+
+#### Installation
+
+```bash
+go install github.com/dkorunic/betteralign/cmd/betteralign@latest
+```
+
+#### Usage
+
+```bash
+# Check for alignment issues
+betteralign ./...
+
+# Automatically fix alignment (recommended)
+betteralign -apply ./...
+```
+
+#### Why betteralign?
+
+- Detects structs that would use less memory if fields were reordered
+- Automatically fixes field ordering with `-apply` flag
+- Preserves comments (unlike the standard `fieldalignment` tool)
+- Skips generated files and test files by default
+- Can ignore specific structs with `// betteralign:ignore` comment
+
+#### Memory alignment rules
+
+Group fields by size, largest first:
+
+1. **Pointers and interfaces** (8 bytes on 64-bit) — `*T`, `interface{}`, `error`
+2. **Slices and maps** (24 bytes) — `[]T`, `map[K]V`
+3. **Strings** (16 bytes) — `string`
+4. **Large structs** — embedded or inline structs
+5. **64-bit types** (8 bytes) — `int64`, `uint64`, `float64`, `time.Duration`, `time.Time`
+6. **32-bit types** (4 bytes) — `int32`, `uint32`, `float32`, `int` (on 32-bit), `rune`
+7. **16-bit types** (2 bytes) — `int16`, `uint16`
+8. **8-bit types** (1 byte) — `int8`, `uint8`, `byte`, `bool`
+
+```go
+// ✓ Good: fields ordered by size (largest first) for optimal memory layout
+type Config struct {
+    httpClient *http.Client   // pointer (8 bytes)
+    logger     *slog.Logger   // pointer (8 bytes)
+    handlers   []Handler      // slice (24 bytes)
+    baseURL    string         // string (16 bytes)
+    model      string         // string (16 bytes)
+    timeout    time.Duration  // int64 (8 bytes)
+    maxRetries int            // int (4-8 bytes)
+    port       int32          // int32 (4 bytes)
+    verbose    bool           // bool (1 byte)
+}
+
+// ✗ Bad: alphabetical ordering wastes memory due to padding
+type Config struct {
+    baseURL    string         // 16 bytes
+    handlers   []Handler      // 24 bytes - misaligned!
+    httpClient *http.Client   // 8 bytes
+    logger     *slog.Logger   // 8 bytes
+    maxRetries int            // 4-8 bytes
+    model      string         // 16 bytes - misaligned!
+    port       int32          // 4 bytes
+    timeout    time.Duration  // 8 bytes - misaligned!
+    verbose    bool           // 1 byte
+}
+```
+
+#### Ignoring specific structs
+
+If a struct must maintain a specific field order (e.g., for binary compatibility or readability):
+
+```go
+// betteralign:ignore
+type SpecialStruct struct {
+    // fields in required order...
+}
+```
+
+### 9.3 Struct literal ordering
+
+Struct literal field assignments must match the struct definition order:
+
+```go
+// ✓ Good: literal assignments match struct field order
+cfg := Config{
+    httpClient: client,
+    logger:     log,
+    handlers:   handlers,
+    baseURL:    "http://example.com",
+    model:      "gpt-4",
+    timeout:    30 * time.Second,
+    maxRetries: 3,
+    port:       8080,
+    verbose:    true,
+}
+```
+
+### 9.4 Switch statement ordering
+
+```go
+// ✓ Good: cases sorted alphabetically, default last
+switch cmd {
+case "build":
+    return build()
+case "run":
+    return run()
+case "test":
+    return test()
+default:
+    return errUnknownCommand
+}
+```
+
+### 9.5 Multi-value cases
+
+Sort multi-value cases by the first value:
+
+```go
+// ✓ Good: sorted by first value ("exit" before "quit")
+case "exit", "quit":
+    return shutdown()
+```
+
+### 9.6 Const block comments
+
+Update const block comments to note sorting:
+
+```go
+// Supported status codes (alphabetically sorted).
+const (
+    StatusActive   = "active"
+    StatusInactive = "inactive"
+    StatusPending  = "pending"
+)
+```
+
+### 9.7 When to refactor
+
+- After implementing new features, ensure new code follows ordering rules
+- **Run `betteralign -apply ./...`** to automatically fix struct field alignment
+- Before committing, verify struct field alignment with `just lint`
+- Run `just fmt` after refactoring to ensure gofmt compatibility
+- For struct field ordering, prioritize memory alignment over readability
+
+---
+
+## 10. Summary of your contract
 
 You are responsible for:
 
 - **Understanding** the repository's actual architecture, conventions, and approved patterns (from `CONTEXT.md`, `README.md`, `VENDOR.md`).
 - **Maintaining** code quality and consistency with these contracts.
 - **Preferring** vendor utilities and existing patterns over custom implementations.
+- **Refactoring** code to follow alphabetical ordering rules (see `.github/agents/refactor.md`).
 - **Documenting** any architectural changes or new patterns in the appropriate files.
 - **Ensuring** that new code, examples, and templates remain reusable and template-consistent.
 
 You must always prioritize accuracy over convenience: if you are unsure about a pattern or contract, re-read the authoritative documents rather than guessing.
-
-```

@@ -23,9 +23,9 @@ type TaskService struct {
 func NewTaskService(llm LLMClient, executor ToolExecutor, publisher EventPublisher) *TaskService {
 	return &TaskService{
 		eventPublisher: publisher,
-		hooks:          NewHooks(),
 		llmClient:      llm,
 		toolExecutor:   executor,
+		hooks:          NewHooks(),
 	}
 }
 

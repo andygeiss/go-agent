@@ -105,7 +105,7 @@ func handleCommand(input string, uc *useCases) (bool, bool) {
 		fmt.Println("🗑️  Conversation cleared.")
 		fmt.Println()
 		return true, false
-	case "quit", "exit":
+	case "exit", "quit":
 		printFinalStats(uc.getAgentStats)
 		fmt.Println("Goodbye! 👋")
 		return true, true

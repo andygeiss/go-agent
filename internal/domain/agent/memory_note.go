@@ -13,7 +13,7 @@ type NoteID string
 // SourceType categorizes what created a memory note.
 type SourceType string
 
-// Standard source types for memory notes.
+// Standard source types for memory notes (alphabetically sorted).
 const (
 	SourceTypeFact        SourceType = "fact"
 	SourceTypePlanStep    SourceType = "plan_step"
