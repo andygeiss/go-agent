@@ -64,63 +64,41 @@ func NewMemoryToolService(store agent.MemoryStore, idGenerator func() string) *M
 	}
 }
 
-// WithUserID sets the default user ID for notes.
-func (s *MemoryToolService) WithUserID(userID string) *MemoryToolService {
-	s.userID = userID
-	return s
-}
-
-// WithSessionID sets the default session ID for notes.
-func (s *MemoryToolService) WithSessionID(sessionID string) *MemoryToolService {
-	s.session = sessionID
-	return s
-}
-
-// MemoryWrite stores a new memory note.
-func (s *MemoryToolService) MemoryWrite(ctx context.Context, arguments string) (string, error) {
-	var args memoryWriteArgs
+// MemoryGet retrieves a specific note by ID.
+func (s *MemoryToolService) MemoryGet(ctx context.Context, arguments string) (string, error) {
+	var args memoryGetArgs
 	if err := agent.DecodeArgs(arguments, &args); err != nil {
 		return "", fmt.Errorf("failed to parse arguments: %w", err)
 	}
 
-	// Map source type string to SourceType
-	sourceType := mapSourceType(args.SourceType)
-
-	// Generate unique ID
-	noteID := agent.NoteID(s.idGen())
-
-	// Create the note
-	note := agent.NewMemoryNote(noteID, sourceType).
-		WithRawContent(args.RawContent).
-		WithSummary(args.Summary).
-		WithContextDescription(args.ContextDescription).
-		WithKeywords(args.Keywords...).
-		WithTags(args.Tags...).
-		WithImportance(args.Importance)
-
-	// Apply scope IDs (prefer explicit args over defaults)
-	if args.UserID != "" {
-		note.WithUserID(args.UserID)
-	} else if s.userID != "" {
-		note.WithUserID(s.userID)
+	note, err := s.store.Get(ctx, agent.NoteID(args.ID))
+	if err != nil {
+		return "", fmt.Errorf("failed to get memory note: %w", err)
 	}
 
-	if args.SessionID != "" {
-		note.WithSessionID(args.SessionID)
-	} else if s.session != "" {
-		note.WithSessionID(s.session)
+	output, err := json.Marshal(map[string]any{
+		"status": "success",
+		"note": map[string]any{
+			"id":                  string(note.ID),
+			"source_type":         string(note.SourceType),
+			"raw_content":         note.RawContent,
+			"summary":             note.Summary,
+			"context_description": note.ContextDescription,
+			"keywords":            note.Keywords,
+			"tags":                note.Tags,
+			"importance":          note.Importance,
+			"user_id":             note.UserID,
+			"session_id":          note.SessionID,
+			"task_id":             note.TaskID,
+			"created_at":          note.CreatedAt,
+			"updated_at":          note.UpdatedAt,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal note: %w", err)
 	}
 
-	if args.TaskID != "" {
-		note.WithTaskID(args.TaskID)
-	}
-
-	// Store the note
-	if err := s.store.Write(ctx, note); err != nil {
-		return "", fmt.Errorf("failed to write memory note: %w", err)
-	}
-
-	return fmt.Sprintf(`{"status": "success", "note_id": "%s"}`, noteID), nil
+	return string(output), nil
 }
 
 // MemorySearch retrieves notes matching the query and filters.
@@ -178,41 +156,63 @@ func (s *MemoryToolService) MemorySearch(ctx context.Context, arguments string) 
 	return string(output), nil
 }
 
-// MemoryGet retrieves a specific note by ID.
-func (s *MemoryToolService) MemoryGet(ctx context.Context, arguments string) (string, error) {
-	var args memoryGetArgs
+// MemoryWrite stores a new memory note.
+func (s *MemoryToolService) MemoryWrite(ctx context.Context, arguments string) (string, error) {
+	var args memoryWriteArgs
 	if err := agent.DecodeArgs(arguments, &args); err != nil {
 		return "", fmt.Errorf("failed to parse arguments: %w", err)
 	}
 
-	note, err := s.store.Get(ctx, agent.NoteID(args.ID))
-	if err != nil {
-		return "", fmt.Errorf("failed to get memory note: %w", err)
+	// Map source type string to SourceType
+	sourceType := mapSourceType(args.SourceType)
+
+	// Generate unique ID
+	noteID := agent.NoteID(s.idGen())
+
+	// Create the note
+	note := agent.NewMemoryNote(noteID, sourceType).
+		WithRawContent(args.RawContent).
+		WithSummary(args.Summary).
+		WithContextDescription(args.ContextDescription).
+		WithKeywords(args.Keywords...).
+		WithTags(args.Tags...).
+		WithImportance(args.Importance)
+
+	// Apply scope IDs (prefer explicit args over defaults)
+	if args.UserID != "" {
+		note.WithUserID(args.UserID)
+	} else if s.userID != "" {
+		note.WithUserID(s.userID)
 	}
 
-	output, err := json.Marshal(map[string]any{
-		"status": "success",
-		"note": map[string]any{
-			"id":                  string(note.ID),
-			"source_type":         string(note.SourceType),
-			"raw_content":         note.RawContent,
-			"summary":             note.Summary,
-			"context_description": note.ContextDescription,
-			"keywords":            note.Keywords,
-			"tags":                note.Tags,
-			"importance":          note.Importance,
-			"user_id":             note.UserID,
-			"session_id":          note.SessionID,
-			"task_id":             note.TaskID,
-			"created_at":          note.CreatedAt,
-			"updated_at":          note.UpdatedAt,
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal note: %w", err)
+	if args.SessionID != "" {
+		note.WithSessionID(args.SessionID)
+	} else if s.session != "" {
+		note.WithSessionID(s.session)
 	}
 
-	return string(output), nil
+	if args.TaskID != "" {
+		note.WithTaskID(args.TaskID)
+	}
+
+	// Store the note
+	if err := s.store.Write(ctx, note); err != nil {
+		return "", fmt.Errorf("failed to write memory note: %w", err)
+	}
+
+	return fmt.Sprintf(`{"status": "success", "note_id": "%s"}`, noteID), nil
+}
+
+// WithSessionID sets the default session ID for notes.
+func (s *MemoryToolService) WithSessionID(sessionID string) *MemoryToolService {
+	s.session = sessionID
+	return s
+}
+
+// WithUserID sets the default user ID for notes.
+func (s *MemoryToolService) WithUserID(userID string) *MemoryToolService {
+	s.userID = userID
+	return s
 }
 
 // mapSourceType maps a string to a SourceType.
@@ -232,6 +232,39 @@ func mapSourceType(s string) agent.SourceType {
 		return agent.SourceTypeUserMessage
 	default:
 		return agent.SourceTypeFact
+	}
+}
+
+// NewMemoryGetTool creates the memory_get tool definition.
+func NewMemoryGetTool(svc *MemoryToolService) agent.Tool {
+	return agent.Tool{
+		ID: "memory_get",
+		Definition: agent.NewToolDefinition("memory_get", "Retrieve full details of a specific memory note by ID. Use after memory_search returns relevant IDs.").
+			WithParameterDef(agent.NewParameterDefinition("id", agent.ParamTypeString).
+				WithDescription("The unique identifier of the note to retrieve").
+				WithRequired()),
+		Func: svc.MemoryGet,
+	}
+}
+
+// NewMemorySearchTool creates the memory_search tool definition.
+func NewMemorySearchTool(svc *MemoryToolService) agent.Tool {
+	return agent.Tool{
+		ID: "memory_search",
+		Definition: agent.NewToolDefinition("memory_search", "Search long-term memory for relevant notes. Use when user refers to past interactions or you need prior preferences/results.").
+			WithParameterDef(agent.NewParameterDefinition("query", agent.ParamTypeString).
+				WithDescription("Natural language query describing what you want to remember").
+				WithRequired()).
+			WithParameterDef(agent.NewParameterDefinition("limit", agent.ParamTypeInteger).
+				WithDescription("Maximum number of notes to return (default: 10)").
+				WithDefault("10")).
+			WithParameterDef(agent.NewParameterDefinition("user_id", agent.ParamTypeString).
+				WithDescription("Filter by user ID")).
+			WithParameterDef(agent.NewParameterDefinition("session_id", agent.ParamTypeString).
+				WithDescription("Filter by session ID")).
+			WithParameterDef(agent.NewParameterDefinition("tags", agent.ParamTypeArray).
+				WithDescription("Filter by tags (any match)")),
+		Func: svc.MemorySearch,
 	}
 }
 
@@ -260,38 +293,5 @@ func NewMemoryWriteTool(svc *MemoryToolService) agent.Tool {
 				WithDescription("1-5 importance score: 1=minor session info, 5=critical preference").
 				WithDefault("2")),
 		Func: svc.MemoryWrite,
-	}
-}
-
-// NewMemorySearchTool creates the memory_search tool definition.
-func NewMemorySearchTool(svc *MemoryToolService) agent.Tool {
-	return agent.Tool{
-		ID: "memory_search",
-		Definition: agent.NewToolDefinition("memory_search", "Search long-term memory for relevant notes. Use when user refers to past interactions or you need prior preferences/results.").
-			WithParameterDef(agent.NewParameterDefinition("query", agent.ParamTypeString).
-				WithDescription("Natural language query describing what you want to remember").
-				WithRequired()).
-			WithParameterDef(agent.NewParameterDefinition("limit", agent.ParamTypeInteger).
-				WithDescription("Maximum number of notes to return (default: 10)").
-				WithDefault("10")).
-			WithParameterDef(agent.NewParameterDefinition("user_id", agent.ParamTypeString).
-				WithDescription("Filter by user ID")).
-			WithParameterDef(agent.NewParameterDefinition("session_id", agent.ParamTypeString).
-				WithDescription("Filter by session ID")).
-			WithParameterDef(agent.NewParameterDefinition("tags", agent.ParamTypeArray).
-				WithDescription("Filter by tags (any match)")),
-		Func: svc.MemorySearch,
-	}
-}
-
-// NewMemoryGetTool creates the memory_get tool definition.
-func NewMemoryGetTool(svc *MemoryToolService) agent.Tool {
-	return agent.Tool{
-		ID: "memory_get",
-		Definition: agent.NewToolDefinition("memory_get", "Retrieve full details of a specific memory note by ID. Use after memory_search returns relevant IDs.").
-			WithParameterDef(agent.NewParameterDefinition("id", agent.ParamTypeString).
-				WithDescription("The unique identifier of the note to retrieve").
-				WithRequired()),
-		Func: svc.MemoryGet,
 	}
 }

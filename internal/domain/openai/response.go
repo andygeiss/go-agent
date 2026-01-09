@@ -1,5 +1,12 @@
 package openai
 
+// ChatCompletionChoice represents a single choice in the response.
+type ChatCompletionChoice struct {
+	FinishReason string  `json:"finish_reason"`
+	Message      Message `json:"message"`
+	Index        int     `json:"index"`
+}
+
 // ChatCompletionResponse represents a response from the chat completions endpoint.
 type ChatCompletionResponse struct {
 	ID      string                 `json:"id"`
@@ -16,4 +23,11 @@ func (r ChatCompletionResponse) GetFirstChoice() *ChatCompletionChoice {
 		return nil
 	}
 	return &r.Choices[0]
+}
+
+// ChatCompletionUsage represents token usage statistics.
+type ChatCompletionUsage struct {
+	CompletionTokens int `json:"completion_tokens"`
+	PromptTokens     int `json:"prompt_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }

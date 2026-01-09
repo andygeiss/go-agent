@@ -191,3 +191,134 @@ func Test_Service_DeleteNote_WithEmptyID_Should_ReturnError(t *testing.T) {
 	// Assert
 	assert.That(t, "error must not be nil", err != nil, true)
 }
+
+// DeleteNoteUseCase tests
+
+func Test_DeleteNoteUseCase_Execute_Should_RemoveNote(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	store.notes["note-123"] = agent.NewMemoryNote("note-123", agent.SourceTypePreference)
+	uc := memorizing.NewDeleteNoteUseCase(store)
+
+	// Act
+	err := uc.Execute(context.Background(), "note-123")
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	_, exists := store.notes["note-123"]
+	assert.That(t, "note must be deleted from store", exists, false)
+}
+
+func Test_DeleteNoteUseCase_Execute_WithEmptyID_Should_ReturnError(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	uc := memorizing.NewDeleteNoteUseCase(store)
+
+	// Act
+	err := uc.Execute(context.Background(), "")
+
+	// Assert
+	assert.That(t, "error must not be nil", err != nil, true)
+}
+
+// GetNoteUseCase tests
+
+func Test_GetNoteUseCase_Execute_Should_ReturnNote(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	originalNote := agent.NewMemoryNote("note-123", agent.SourceTypePreference)
+	store.notes["note-123"] = originalNote
+	uc := memorizing.NewGetNoteUseCase(store)
+
+	// Act
+	note, err := uc.Execute(context.Background(), "note-123")
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "note must match", note, originalNote)
+}
+
+func Test_GetNoteUseCase_Execute_WithEmptyID_Should_ReturnError(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	uc := memorizing.NewGetNoteUseCase(store)
+
+	// Act
+	_, err := uc.Execute(context.Background(), "")
+
+	// Assert
+	assert.That(t, "error must not be nil", err != nil, true)
+}
+
+// SearchNotesUseCase tests
+
+func Test_SearchNotesUseCase_Execute_Should_ReturnNotes(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	store.searchNotes = []*agent.MemoryNote{
+		agent.NewMemoryNote("note-1", agent.SourceTypePreference),
+		agent.NewMemoryNote("note-2", agent.SourceTypePreference),
+	}
+	uc := memorizing.NewSearchNotesUseCase(store)
+
+	// Act
+	notes, err := uc.Execute(context.Background(), "preferences", 10, nil)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "notes count must be 2", len(notes), 2)
+}
+
+func Test_SearchNotesUseCase_Execute_WithZeroLimit_Should_UseDefaultLimit(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	uc := memorizing.NewSearchNotesUseCase(store)
+
+	// Act
+	_, err := uc.Execute(context.Background(), "test", 0, nil)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+}
+
+// WriteNoteUseCase tests
+
+func Test_WriteNoteUseCase_Execute_Should_StoreNote(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	uc := memorizing.NewWriteNoteUseCase(store)
+	note := agent.NewMemoryNote("note-123", agent.SourceTypePreference).
+		WithRawContent("User prefers German")
+
+	// Act
+	err := uc.Execute(context.Background(), note)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "note must be stored", store.notes["note-123"], note)
+}
+
+func Test_WriteNoteUseCase_Execute_WithEmptyID_Should_ReturnError(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	uc := memorizing.NewWriteNoteUseCase(store)
+	note := agent.NewMemoryNote("", agent.SourceTypePreference)
+
+	// Act
+	err := uc.Execute(context.Background(), note)
+
+	// Assert
+	assert.That(t, "error must not be nil", err != nil, true)
+}
+
+func Test_WriteNoteUseCase_Execute_WithNilNote_Should_ReturnError(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	uc := memorizing.NewWriteNoteUseCase(store)
+
+	// Act
+	err := uc.Execute(context.Background(), nil)
+
+	// Assert
+	assert.That(t, "error must not be nil", err != nil, true)
+}

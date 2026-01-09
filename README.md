@@ -40,6 +40,7 @@ Works with any OpenAI-compatible API (LM Studio, OpenAI, vLLM, Ollama, etc.).
 - [Creating Custom Tools](#creating-custom-tools)
 - [Configuration](#configuration)
 - [Docker](#docker)
+- [Project Structure](#project-structure)
 - [Testing](#testing)
 - [Contributing](#contributing)
 - [License](#license)
@@ -130,6 +131,7 @@ The project follows **hexagonal architecture** (ports and adapters) with domain-
 │  │ chatting/     Use cases: SendMessage, ClearConversation     ││
 │  │ memorizing/   Use cases: WriteNote, SearchNotes             ││
 │  │ tooling/      Tool implementations                          ││
+│  │ openai/       OpenAI API types (request, response, tool)    ││
 │  └─────────────────────────────────────────────────────────────┘│
 └──────────────────────────────┬──────────────────────────────────┘
                                │ depends on interfaces (ports)
@@ -168,14 +170,14 @@ For detailed architecture documentation, see [CONTEXT.md](CONTEXT.md).
 | `get_current_time` | Returns current date and time |
 | Memory tools | Read/write/search long-term memory |
 
-### Resilience Patterns
+### Domain Events
 
-The `OpenAIClient` includes configurable resilience:
+Subscribe to task lifecycle events:
 
-- **Timeout**: HTTP (60s) and LLM call (120s) timeouts
-- **Retry**: 3 attempts with 2s delay
-- **Circuit Breaker**: Opens after 5 consecutive failures
-- **Throttling**: Rate limiting (disabled by default)
+- `agent.task.started` — Task begins execution
+- `agent.task.completed` — Task finishes successfully
+- `agent.task.failed` — Task terminates with error
+- `agent.toolcall.executed` — Tool call completes
 
 ### Lifecycle Hooks
 
@@ -193,14 +195,14 @@ hooks := agent.NewHooks().
 taskService.WithHooks(hooks)
 ```
 
-### Domain Events
+### Resilience Patterns
 
-Subscribe to task lifecycle events:
+The `OpenAIClient` includes configurable resilience:
 
-- `agent.task.started` — Task begins execution
-- `agent.task.completed` — Task finishes successfully
-- `agent.task.failed` — Task terminates with error
-- `agent.toolcall.executed` — Tool call completes
+- **Timeout**: HTTP (60s) and LLM call (120s) timeouts
+- **Retry**: 3 attempts with 2s delay
+- **Circuit Breaker**: Opens after 5 consecutive failures
+- **Throttling**: Rate limiting (disabled by default)
 
 ---
 
@@ -209,6 +211,14 @@ Subscribe to task lifecycle events:
 ```bash
 go run ./cmd/cli [flags]
 ```
+
+### Commands (during chat)
+
+| Command | Description |
+|---------|-------------|
+| `quit` / `exit` | Exit the CLI |
+| `clear` | Reset conversation history |
+| `stats` | Show agent statistics |
 
 ### Flags
 
@@ -219,14 +229,6 @@ go run ./cmd/cli [flags]
 | `-max-iterations` | `10` | Max iterations per task |
 | `-max-messages` | `50` | Max messages to retain (0 = unlimited) |
 | `-verbose` | `false` | Show detailed metrics |
-
-### Commands (during chat)
-
-| Command | Description |
-|---------|-------------|
-| `quit` / `exit` | Exit the CLI |
-| `clear` | Reset conversation history |
-| `stats` | Show agent statistics |
 
 ---
 

@@ -1,5 +1,33 @@
 package openai
 
+// FunctionCall represents a function call made by the model.
+type FunctionCall struct {
+	Arguments string `json:"arguments"`
+	Name      string `json:"name"`
+}
+
+// FunctionDefinition defines a function that can be called by the model.
+type FunctionDefinition struct {
+	Description string               `json:"description"`
+	Name        string               `json:"name"`
+	Parameters  ParametersDefinition `json:"parameters"`
+}
+
+// ParametersDefinition defines the parameters schema for a function.
+type ParametersDefinition struct {
+	Properties           map[string]PropertyDefinition `json:"properties"`
+	Type                 string                        `json:"type"`
+	Required             []string                      `json:"required,omitempty"`
+	AdditionalProperties bool                          `json:"additionalProperties"`
+}
+
+// PropertyDefinition defines a single property in a JSON schema.
+type PropertyDefinition struct {
+	Description string   `json:"description"`
+	Type        string   `json:"type"`
+	Enum        []string `json:"enum,omitempty"`
+}
+
 // Tool defines a tool available to the model.
 type Tool struct {
 	Type     string             `json:"type"`
@@ -31,4 +59,23 @@ func (t Tool) WithParameter(name, paramType, description string, required bool) 
 		t.Function.Parameters.Required = append(t.Function.Parameters.Required, name)
 	}
 	return t
+}
+
+// ToolCall represents a tool call in a message.
+type ToolCall struct {
+	Function FunctionCall `json:"function"`
+	ID       string       `json:"id"`
+	Type     string       `json:"type"`
+}
+
+// NewToolCall creates a new tool call.
+func NewToolCall(id, name, arguments string) ToolCall {
+	return ToolCall{
+		ID:   id,
+		Type: "function",
+		Function: FunctionCall{
+			Name:      name,
+			Arguments: arguments,
+		},
+	}
 }

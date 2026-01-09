@@ -108,16 +108,6 @@ func (td ToolDefinition) GetRequiredParameters() []string {
 	})
 }
 
-// HasParameter checks if a parameter with the given name exists.
-func (td ToolDefinition) HasParameter(name string) bool {
-	for _, p := range td.Parameters {
-		if p.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
 // GetParameter returns the parameter definition for the given name.
 // Returns an empty definition if not found.
 func (td ToolDefinition) GetParameter(name string) ParameterDefinition {
@@ -127,6 +117,16 @@ func (td ToolDefinition) GetParameter(name string) ParameterDefinition {
 		}
 	}
 	return ParameterDefinition{}
+}
+
+// HasParameter checks if a parameter with the given name exists.
+func (td ToolDefinition) HasParameter(name string) bool {
+	for _, p := range td.Parameters {
+		if p.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // ValidationError represents argument validation failures with field-level details.
@@ -148,11 +148,6 @@ func (v *ValidationError) AddError(field, message string) {
 	v.Errors[field] = message
 }
 
-// HasErrors returns true if there are validation errors.
-func (v *ValidationError) HasErrors() bool {
-	return len(v.Errors) > 0
-}
-
 // Error implements the error interface.
 func (v *ValidationError) Error() string {
 	if len(v.Errors) == 0 {
@@ -164,6 +159,11 @@ func (v *ValidationError) Error() string {
 		parts = append(parts, fmt.Sprintf("%s: %s", field, msg))
 	}
 	return fmt.Sprintf("validation failed for tool %s: %s", v.ToolName, strings.Join(parts, "; "))
+}
+
+// HasErrors returns true if there are validation errors.
+func (v *ValidationError) HasErrors() bool {
+	return len(v.Errors) > 0
 }
 
 // DecodeArgs decodes JSON arguments into the destination struct.

@@ -100,34 +100,30 @@ go-agent/
 │   │       └── encrypted_*.go          # Encrypted variants
 │   └── domain/
 │       ├── agent/              # Core domain: Agent aggregate, Task, Message, etc.
-│       │   ├── agent.go        # Agent aggregate root
+│       │   ├── agent.go        # Agent aggregate root + Options + Metadata
+│       │   ├── errors.go       # Domain errors (LLMError, TaskError, ToolError)
+│       │   ├── events.go       # Domain events (EventTask*, EventToolCall*)
+│       │   ├── memory_note.go  # MemoryNote entity with builder pattern
+│       │   ├── message.go      # Message + LLMResponse + ToolCall (grouped)
+│       │   ├── ports.go        # All interfaces (LLMClient, ToolExecutor, etc.)
+│       │   ├── service.go      # TaskService + Hooks (consolidated)
+│       │   ├── shared.go       # Shared types (IDs, Result, Role, Status)
 │       │   ├── task.go         # Task entity
-│       │   ├── task_service.go # Task orchestration (agent loop)
-│       │   ├── message.go      # Message value object
-│       │   ├── tool_*.go       # Tool-related types
-│       │   ├── memory*.go      # Memory types and interfaces
-│       │   ├── hooks.go        # Lifecycle hooks
-│       │   ├── events.go       # Domain events
-│       │   ├── errors.go       # Domain errors
-│       │   ├── llm.go          # LLMClient interface (port)
-│       │   ├── tools.go        # ToolExecutor interface (port)
-│       │   └── shared.go       # Shared types (IDs, Result, Role, Status)
-│       ├── chatting/           # Chatting use cases
-│       │   ├── send_message.go
-│       │   ├── clear_conversation.go
-│       │   └── get_agent_stats.go
-│       ├── memorizing/         # Memory management use cases
-│       │   ├── service.go      # Memory service
-│       │   ├── write_note.go
-│       │   ├── search_notes.go
-│       │   ├── get_note.go
-│       │   └── delete_note.go
+│       │   └── tool_definition.go # ToolDefinition + validation
+│       ├── chatting/           # Chatting use cases (consolidated)
+│       │   └── service.go      # AgentStats + ClearConversation + GetAgentStats + SendMessage
+│       ├── memorizing/         # Memory management use cases (consolidated)
+│       │   ├── errors.go       # Sentinel errors (ErrNoteNil, ErrNoteIDEmpty)
+│       │   └── service.go      # Service + DeleteNote + GetNote + SearchNotes + WriteNote
 │       ├── tooling/            # Tool implementations
 │       │   ├── calculate.go    # Arithmetic calculator
 │       │   ├── time.go         # Current time
-│       │   └── memory_tools.go # Memory read/write tools
-│       └── openai/             # OpenAI API types (value objects)
-│           └── *.go            # Request/response structures
+│       │   └── memory_tools.go # Memory read/write/search tools
+│       └── openai/             # OpenAI API types (consolidated)
+│           ├── openai.go       # Package doc
+│           ├── request.go      # ChatCompletionRequest + Message
+│           ├── response.go     # ChatCompletionResponse + Choice + Usage
+│           └── tool.go         # Tool + ToolCall + FunctionCall + definitions
 ├── AGENTS.md                   # Agent definitions index
 ├── CONTEXT.md                  # This file
 ├── README.md                   # User-facing documentation
@@ -141,7 +137,7 @@ go-agent/
 | Code type | Location |
 |-----------|----------|
 | New domain entities/aggregates | `internal/domain/agent/` |
-| New use cases | `internal/domain/<bounded-context>/` |
+| New use cases | `internal/domain/<bounded-context>/service.go` |
 | New tool implementations | `internal/domain/tooling/` |
 | New infrastructure adapters | `internal/adapters/outbound/` |
 | CLI commands/flags | `cmd/cli/` |
@@ -154,8 +150,8 @@ go-agent/
 
 ### 5.1 General
 
-- **Small, focused files**: One type or concept per file
-- **Interface segregation**: Define interfaces in the domain, implement in adapters
+- **Functionality-based files**: Related types live together (Go stdlib idioms)
+- **Interface segregation**: Define interfaces in `ports.go`, implement in adapters
 - **Functional options**: Use `With*` pattern for optional configuration
 - **Value objects with builders**: Use method chaining for building immutable types
 - **Pure domain logic**: Domain layer has no external dependencies
@@ -214,9 +210,59 @@ go-agent/
 - Run `go fmt ./...` before committing
 - Keep imports grouped: stdlib, external, internal
 
+### 5.6 File organization (Go stdlib idioms)
+
+Structure Go files by **functionality**, not by DDD element type:
+
+| File | Contents | Rationale |
+|------|----------|----------|
+| `<aggregate>.go` | Aggregate root + related entities + value objects | Self-contained concept |
+| `ports.go` | All inbound + outbound interfaces | Clear "API surface" for adapters |
+| `service.go` | Domain service + hooks + use cases | Service orchestrates, use cases consolidated |
+| `message.go` | Message + LLMResponse + ToolCall | Related types grouped together |
+| `events.go` | Event types only (no interfaces) | Events are published payloads |
+| `errors.go` | Sentinel errors + typed error structs | Domain-specific error conditions |
+| `request.go` | API request types | Outbound API data structures |
+| `response.go` | API response types | Inbound API data structures |
+| `tool.go` | Tool-related types (definitions, calls) | Tool abstraction grouped |
+
+**Guiding principles:**
+1. **Locality** — Open one file to understand a complete concept
+2. **Go idioms** — Match stdlib organization (e.g., `net/http` keeps related types together)
+3. **Discoverability** — `ports.go` is the entry point for adapter implementations
+
+**Anti-patterns to avoid:**
+- One type per file (excessive fragmentation)
+- Separate files for value objects, entities, events (DDD theater)
+
 ---
 
 ## 6. Cross-cutting concerns and reusable patterns
+
+### Event publishing
+
+Domain events are published via `EventPublisher` interface:
+- `agent.task.started` — Task begins execution
+- `agent.task.completed` — Task finishes successfully
+- `agent.task.failed` — Task terminates with error
+- `agent.toolcall.executed` — Tool call completes
+
+### Hooks for extensibility
+
+```go
+hooks := agent.NewHooks().
+    WithBeforeTask(func(ctx, agent, task) error { ... }).
+    WithAfterToolCall(func(ctx, agent, toolCall) error { ... })
+
+taskService.WithHooks(hooks)
+```
+
+### Memory system
+
+Memory notes store long-term context:
+- `MemoryNote` — atomic unit with metadata, tags, importance
+- `MemoryStore` — interface with in-memory and JSON file implementations
+- Search by query, filter by user/session/task/tags
 
 ### Resilience (via cloud-native-utils/stability)
 
@@ -238,24 +284,6 @@ The `OpenAIClient` wraps LLM calls with configurable resilience:
 - Circuit breaker: opens after 5 failures (configurable)
 - Throttle: disabled by default (configurable)
 
-### Event publishing
-
-Domain events are published via `EventPublisher` interface:
-- `agent.task.started` — Task begins execution
-- `agent.task.completed` — Task finishes successfully
-- `agent.task.failed` — Task terminates with error
-- `agent.toolcall.executed` — Tool call completes
-
-### Hooks for extensibility
-
-```go
-hooks := agent.NewHooks().
-    WithBeforeTask(func(ctx, agent, task) error { ... }).
-    WithAfterToolCall(func(ctx, agent, toolCall) error { ... })
-
-taskService.WithHooks(hooks)
-```
-
 ### Tool registration
 
 ```go
@@ -263,13 +291,6 @@ tool := tooling.NewCalculateTool()
 executor.RegisterTool("calculate", tool.Func)
 executor.RegisterToolDefinition(tool.Definition)
 ```
-
-### Memory system
-
-Memory notes store long-term context:
-- `MemoryNote` — atomic unit with metadata, tags, importance
-- `MemoryStore` — interface with in-memory and JSON file implementations
-- Search by query, filter by user/session/task/tags
 
 ---
 
@@ -307,6 +328,29 @@ Memory notes store long-term context:
 
 ## 8. Key commands & workflows
 
+### Build
+
+```bash
+# Build binary
+go build -o go-agent ./cmd/cli
+
+# Build with optimizations (production)
+go build -ldflags "-s -w" -o go-agent ./cmd/cli
+
+# Build with PGO (requires cpuprofile.pprof)
+go build -ldflags "-s -w" -pgo cpuprofile.pprof -o go-agent ./cmd/cli
+```
+
+### CLI flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-url` | `http://localhost:1234` | LM Studio API base URL |
+| `-model` | `$LM_STUDIO_MODEL` | Model name |
+| `-max-iterations` | `10` | Max iterations per task |
+| `-max-messages` | `50` | Max messages to retain (0 = unlimited) |
+| `-verbose` | `false` | Show detailed metrics |
+
 ### Development
 
 ```bash
@@ -329,19 +373,6 @@ go fmt ./...
 go vet ./...
 ```
 
-### Build
-
-```bash
-# Build binary
-go build -o go-agent ./cmd/cli
-
-# Build with optimizations (production)
-go build -ldflags "-s -w" -o go-agent ./cmd/cli
-
-# Build with PGO (requires cpuprofile.pprof)
-go build -ldflags "-s -w" -pgo cpuprofile.pprof -o go-agent ./cmd/cli
-```
-
 ### Docker
 
 ```bash
@@ -354,16 +385,6 @@ docker-compose up -d
 # View logs
 docker-compose logs -f app
 ```
-
-### CLI flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-url` | `http://localhost:1234` | LM Studio API base URL |
-| `-model` | `$LM_STUDIO_MODEL` | Model name |
-| `-max-iterations` | `10` | Max iterations per task |
-| `-max-messages` | `50` | Max messages to retain (0 = unlimited) |
-| `-verbose` | `false` | Show detailed metrics |
 
 ---
 

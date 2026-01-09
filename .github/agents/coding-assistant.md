@@ -134,7 +134,18 @@ When performing any non-trivial task, follow this loop:
 - **Run `just test` after every code change.** Resolve all failing tests iteratively until all tests pass. Do not consider the task complete until all tests pass.
 - Ensure changes are safe, incremental, and do not break the repository's invariants.
 
-### 4.6 Document
+### 4.6 Refactor
+
+**IMPORTANT:** Only refactor code after all tests pass (0 failures).
+
+- Apply refactoring rules from Section 10 (alphabetical sorting, memory alignment, etc.)
+- Run `betteralign -apply ./...` to fix struct field alignment
+- Run `just fmt` after refactoring to ensure gofmt compatibility
+- Run `just lint` to verify 0 issues remain
+- Run `just test` to confirm refactoring didn't break anything
+- Iterate until: `just fmt && just lint && just test` all pass with no issues
+
+### 4.7 Document
 
 - Update `CONTEXT.md` only when architecture or conventions genuinely evolve.
 - Update `README.md` when behavior or user-facing aspects change.
@@ -224,11 +235,64 @@ When asked to scaffold a new project based on this template:
 
 ---
 
-## 9. Refactoring guidelines
+## 9. File organization (Go stdlib idioms)
 
-When refactoring Go code, follow the rules defined in `.github/agents/refactor.md`. The key principles are:
+Structure Go files by **functionality**, not by DDD element type. This follows Go standard library conventions where related types, functions, and methods live together in cohesive files.
 
-### 9.1 Ordering rules (alphabetical sorting)
+### 9.1 Why functionality-based organization
+
+| Approach | Problem |
+|----------|---------|
+| **By element type** (aggregate.go, entities.go, events.go, value_objects.go) | Artificial separation; requires jumping between files to understand a concept |
+| **By functionality** (index.go, service.go, ports.go) | Types live near their usage; matches Go stdlib idioms |
+
+### 9.2 Domain package structure
+
+For each bounded context under `internal/domain/<context>/`:
+
+| File | Contents | Rationale |
+|------|----------|-----------|
+| `<aggregate>.go` | Aggregate root + entities + value objects + methods | Self-contained; all supporting types live with the aggregate they serve |
+| `service.go` | Domain service + events it publishes | Service orchestrates use cases and knows which events to emit |
+| `ports.go` | Inbound + outbound interfaces | Clear "API surface" for adapters to implement |
+
+### 9.3 Example structure
+
+```
+internal/domain/indexing/
+├── index.go          # Index aggregate + FileInfo + IndexID + SearchResult + all methods
+├── index_test.go     # Tests for Index, FileInfo, IndexID, SearchResult
+├── ports.go          # FileReader, IndexRepository interfaces
+├── service.go        # IndexingService + EventFileIndexCreated
+└── service_test.go   # Tests for IndexingService + events
+```
+
+### 9.4 Guiding principles
+
+1. **Locality** — Open one file to understand a complete concept
+2. **Go idioms** — Match stdlib organization (e.g., `net/http` keeps `Request`, `Response`, `Header` together)
+3. **Scalability** — Split files only when they exceed ~300-400 lines or when concepts become distinct
+4. **Discoverability** — `ports.go` is the entry point for adapter implementations
+
+### 9.5 When to split files
+
+- File exceeds ~400 lines
+- Contains truly independent concepts with no shared types
+- Team consensus that separation improves navigation
+
+### 9.6 Anti-patterns to avoid
+
+- **One type per file** — Creates excessive fragmentation
+- **Separate files for value objects, entities, events** — DDD theater; doesn't improve comprehension
+- **Importing within the same package** — Sign of premature separation
+
+---
+
+## 10. Refactoring guidelines
+
+When refactoring Go code, apply the following rules to maintain consistency and optimize performance.
+
+### 10.1 Ordering rules (alphabetical sorting)
 
 Apply alphabetical sorting consistently to maintain code readability and reduce merge conflicts:
 
@@ -238,12 +302,12 @@ Apply alphabetical sorting consistently to maintain code readability and reduce 
 | **Const blocks** | Sort identifiers alphabetically; preserve blank-line groupings |
 | **Var blocks** | Sort identifiers alphabetically; preserve comment associations |
 | **Type declarations** | Sort type names alphabetically at file scope |
-| **Struct fields** | **Optimize for memory alignment** (see 9.2); do NOT sort alphabetically |
+| **Struct fields** | **Optimize for memory alignment** (see 10.2); do NOT sort alphabetically |
 | **Struct literals** | Match struct field definition order |
 | **Switch cases** | Sort cases alphabetically; `default` always last |
 | **Functions/methods** | `init` first, then alphabetically by name |
 
-### 9.2 Struct field ordering (memory alignment)
+### 10.2 Struct field ordering (memory alignment)
 
 **IMPORTANT**: Struct fields must be ordered for **optimal memory alignment**, NOT alphabetically. Use [`betteralign`](https://github.com/dkorunic/betteralign) to check and automatically fix struct field ordering.
 
@@ -323,7 +387,7 @@ type SpecialStruct struct {
 }
 ```
 
-### 9.3 Struct literal ordering
+### 10.3 Struct literal ordering
 
 Struct literal field assignments must match the struct definition order:
 
@@ -342,7 +406,7 @@ cfg := Config{
 }
 ```
 
-### 9.4 Switch statement ordering
+### 10.4 Switch statement ordering
 
 ```go
 // ✓ Good: cases sorted alphabetically, default last
@@ -358,7 +422,7 @@ default:
 }
 ```
 
-### 9.5 Multi-value cases
+### 10.5 Multi-value cases
 
 Sort multi-value cases by the first value:
 
@@ -368,7 +432,7 @@ case "exit", "quit":
     return shutdown()
 ```
 
-### 9.6 Const block comments
+### 10.6 Const block comments
 
 Update const block comments to note sorting:
 
@@ -381,7 +445,7 @@ const (
 )
 ```
 
-### 9.7 When to refactor
+### 10.7 When to refactor
 
 - After implementing new features, ensure new code follows ordering rules
 - **Run `betteralign -apply ./...`** to automatically fix struct field alignment
@@ -391,7 +455,7 @@ const (
 
 ---
 
-## 10. Summary of your contract
+## 11. Summary of your contract
 
 You are responsible for:
 

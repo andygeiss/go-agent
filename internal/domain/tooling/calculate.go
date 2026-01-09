@@ -100,41 +100,6 @@ func (p *exprParser) parseExpression() (float64, error) {
 	}
 }
 
-// parseTerm handles multiplication and division (higher precedence).
-func (p *exprParser) parseTerm() (float64, error) {
-	left, err := p.parseFactor()
-	if err != nil {
-		return 0, err
-	}
-
-	for {
-		p.skipWhitespace()
-		if p.pos >= len(p.input) {
-			return left, nil
-		}
-
-		op := p.input[p.pos]
-		if op != '*' && op != '/' {
-			return left, nil
-		}
-		p.pos++
-
-		right, err := p.parseFactor()
-		if err != nil {
-			return 0, err
-		}
-
-		if op == '*' {
-			left *= right
-		} else {
-			if right == 0 {
-				return 0, errors.New("division by zero")
-			}
-			left /= right
-		}
-	}
-}
-
 // parseFactor handles numbers, parentheses, and unary minus (highest precedence).
 func (p *exprParser) parseFactor() (float64, error) {
 	p.skipWhitespace()
@@ -201,6 +166,41 @@ func (p *exprParser) parseNumber() (float64, error) {
 		return 0, fmt.Errorf("invalid number: %s", numStr)
 	}
 	return num, nil
+}
+
+// parseTerm handles multiplication and division (higher precedence).
+func (p *exprParser) parseTerm() (float64, error) {
+	left, err := p.parseFactor()
+	if err != nil {
+		return 0, err
+	}
+
+	for {
+		p.skipWhitespace()
+		if p.pos >= len(p.input) {
+			return left, nil
+		}
+
+		op := p.input[p.pos]
+		if op != '*' && op != '/' {
+			return left, nil
+		}
+		p.pos++
+
+		right, err := p.parseFactor()
+		if err != nil {
+			return 0, err
+		}
+
+		if op == '*' {
+			left *= right
+		} else {
+			if right == 0 {
+				return 0, errors.New("division by zero")
+			}
+			left /= right
+		}
+	}
 }
 
 func (p *exprParser) skipWhitespace() {
