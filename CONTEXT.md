@@ -46,7 +46,7 @@ The library is designed to be imported and extended, with a reference CLI applic
 
 ## 3. High-Level Architecture
 
-The project follows **Hexagonal Architecture** (Ports and Adapters) combined with **Domain-Driven Design** principles.
+The project follows **Hexagonal Architecture** (Ports and Adapters) combined with **Domain-Driven Design** principles. All domain logic lives under `internal/domain/`, making this project ideal as a **template** for building LLM-powered applications.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -56,17 +56,21 @@ The project follows **Hexagonal Architecture** (Ports and Adapters) combined wit
                                 │ uses
 ┌───────────────────────────────▼──────────────────────────────────┐
 │                    Domain Layer (internal/domain)                │
-│                  • Use cases (SendMessage, etc.)                 │
-│                  • Orchestrates pkg/agent library                │
-└───────────────────────────────┬──────────────────────────────────┘
-                                │ depends on
-┌───────────────────────────────▼──────────────────────────────────┐
-│                  Core Library (pkg/agent)                        │
-│   • Agent aggregate (conversation, tasks, iteration control)     │
-│   • Task entity (lifecycle: Pending → Running → Completed)       │
-│   • TaskService (agent loop orchestration)                       │
-│   • Ports: LLMClient, ToolExecutor, EventPublisher               │
-│   • Domain events: TaskStarted, TaskCompleted, ToolCallExecuted  │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │ agent/        Core agent framework                       │   │
+│   │   • Agent aggregate (conversation, tasks, iteration)     │   │
+│   │   • TaskService (Observe → Decide → Act → Update loop)   │   │
+│   │   • Ports: LLMClient, ToolExecutor, EventPublisher       │   │
+│   │   • Domain events, typed errors, value objects           │   │
+│   ├─────────────────────────────────────────────────────────┤   │
+│   │ openai/       OpenAI API data structures                 │   │
+│   ├─────────────────────────────────────────────────────────┤   │
+│   │ chatting/     Chat use cases (SendMessage, etc.)         │   │
+│   ├─────────────────────────────────────────────────────────┤   │
+│   │ tooling/      Tool definitions and implementations       │   │
+│   ├─────────────────────────────────────────────────────────┤   │
+│   │ memorizing/   Memory management use cases                │   │
+│   └─────────────────────────────────────────────────────────┘   │
 └───────────────────────────────┬──────────────────────────────────┘
                                 │ implemented by
 ┌───────────────────────────────▼──────────────────────────────────┐
@@ -74,6 +78,7 @@ The project follows **Hexagonal Architecture** (Ports and Adapters) combined wit
 │   • OpenAIClient (LLM port → OpenAI API)                         │
 │   • ToolExecutor (tool registration and execution)               │
 │   • EventPublisher (event port → messaging dispatcher)           │
+│   • ConversationStore, MemoryStore (persistence adapters)        │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -81,11 +86,13 @@ The project follows **Hexagonal Architecture** (Ports and Adapters) combined wit
 
 | Layer | Responsibility | Dependencies |
 |-------|----------------|--------------|
-| `cmd/` | Application entry, configuration | Domain, pkg/agent |
-| `internal/domain/` | Use cases, business rules | pkg/agent (via ports) |
-| `internal/adapters/` | Infrastructure implementations | pkg/agent ports, external APIs |
-| `pkg/agent/` | Core library, domain model | cloud-native-utils/event (interfaces only) |
-| `pkg/openai/` | OpenAI API data structures | None |
+| `cmd/` | Application entry, configuration | internal/domain/* |
+| `internal/domain/agent/` | Core agent framework, ports, events | cloud-native-utils (interfaces) |
+| `internal/domain/openai/` | OpenAI API data structures | None |
+| `internal/domain/chatting/` | Chat use cases | internal/domain/agent |
+| `internal/domain/tooling/` | Tool definitions and implementations | internal/domain/agent |
+| `internal/domain/memorizing/` | Memory management use cases | internal/domain/agent |
+| `internal/adapters/` | Infrastructure implementations | internal/domain/*, external APIs |
 
 ---
 
@@ -103,35 +110,68 @@ go-agent/
 │   │       ├── conversation_store.go         # ConversationStore implementation
 │   │       ├── encrypted_conversation_store.go # Encrypted storage wrapper
 │   │       ├── event_publisher.go            # EventPublisher implementation
+│   │       ├── memory_store.go               # MemoryStore implementation
 │   │       ├── openai_client.go              # LLMClient implementation
 │   │       └── tool_executor.go              # ToolExecutor implementation
 │   └── domain/
+│       ├── agent/              # Core agent framework
+│       │   ├── agent.go            # Agent aggregate root
+│       │   ├── agent_test.go       # Agent tests
+│       │   ├── benchmark_test.go   # Performance benchmarks
+│       │   ├── conversation.go     # Conversation management
+│       │   ├── errors.go           # Typed errors (LLMError, ToolError, TaskError)
+│       │   ├── errors_test.go      # Error tests
+│       │   ├── events.go           # Domain events (TaskStarted, TaskCompleted, ToolCallExecuted)
+│       │   ├── events_test.go      # Event tests
+│       │   ├── hooks.go            # Lifecycle hooks
+│       │   ├── llm.go              # LLM port and LLMResponse
+│       │   ├── memory.go           # MemoryStore port
+│       │   ├── memory_note.go      # Memory note entity
+│       │   ├── memory_note_test.go # Memory note tests
+│       │   ├── message.go          # Message entity
+│       │   ├── message_test.go     # Message tests
+│       │   ├── shared.go           # Shared types and constants
+│       │   ├── shared_test.go      # Shared tests
+│       │   ├── task.go             # Task entity with lifecycle management
+│       │   ├── task_test.go        # Task tests
+│       │   ├── task_service.go     # TaskService (agent loop orchestration)
+│       │   ├── task_service_test.go# TaskService tests
+│       │   ├── tool_call.go        # ToolCall entity with execution state
+│       │   ├── tool_call_test.go   # ToolCall tests
+│       │   ├── tool_definition.go  # ToolDefinition, ParameterDefinition, validation
+│       │   ├── tool_definition_test.go # ToolDefinition tests
+│       │   └── tools.go            # ToolExecutor port
+│       ├── openai/             # OpenAI API data structures
+│       │   ├── chat_completion_*.go # Request/response types
+│       │   ├── message.go          # Chat message format
+│       │   ├── tool.go             # Tool definition format
+│       │   └── tool_call.go        # Tool call format
 │       ├── chatting/           # Chatting domain
-│       │   ├── service.go            # Use cases (SendMessage, ClearConversation, GetAgentStats)
-│       │   ├── service_test.go       # Use case tests
-│       │   └── value_objects.go      # Domain-specific types
+│       │   ├── clear_conversation.go     # ClearConversationUseCase
+│       │   ├── clear_conversation_test.go
+│       │   ├── get_agent_stats.go        # GetAgentStatsUseCase, AgentStats
+│       │   ├── get_agent_stats_test.go
+│       │   ├── send_message.go           # SendMessageUseCase, Input/Output types
+│       │   └── send_message_test.go
+│       ├── memorizing/         # Memory management domain
+│       │   ├── delete_note.go            # DeleteNoteUseCase
+│       │   ├── delete_note_test.go
+│       │   ├── errors.go                 # Memory domain errors
+│       │   ├── get_note.go               # GetNoteUseCase
+│       │   ├── get_note_test.go
+│       │   ├── search_notes.go           # SearchNotesUseCase
+│       │   ├── search_notes_test.go
+│       │   ├── service.go                # Service facade
+│       │   ├── service_test.go           # Service tests with mock store
+│       │   ├── write_note.go             # WriteNoteUseCase
+│       │   └── write_note_test.go
 │       └── tooling/            # Tooling domain
-│           ├── aggregate.go          # Tool aggregate
-│           ├── aggregate_test.go     # Tool aggregate tests
-│           ├── entities.go           # Tool definitions
-│           ├── service.go            # Tool implementations (Calculate, GetCurrentTime)
-│           ├── service_test.go       # Tool tests
-│           └── value_objects.go      # Tool-specific types
-├── pkg/
-│   ├── agent/                  # Reusable agent library (import this)
-│   │   ├── aggregate.go        # Agent aggregate root
-│   │   ├── benchmark_test.go   # Performance benchmarks
-│   │   ├── entities.go         # LLMResponse, Message, Task, ToolCall, ToolDefinition
-│   │   ├── errors.go           # Typed errors (LLMError, ToolError, TaskError)
-│   │   ├── events.go           # Domain events (TaskStarted, TaskCompleted, ToolCallExecuted)
-│   │   ├── ports_outbound.go   # LLMClient, ToolExecutor, EventPublisher, ConversationStore interfaces
-│   │   ├── service.go          # Hooks, TaskService (agent loop orchestration)
-│   │   └── value_objects.go    # ID types, Result, TokenUsage, Role/Status constants
-│   └── openai/                 # OpenAI API data structures
-│       ├── chat_completion_*.go # Request/response types
-│       ├── message.go          # Chat message format
-│       ├── tool.go             # Tool definition format
-│       └── tool_call.go        # Tool call format
+│           ├── calculate.go          # Calculate tool (NewCalculateTool, Calculate, expression parser)
+│           ├── calculate_test.go     # Calculate tool tests
+│           ├── memory_tools.go       # Memory tool implementations
+│           ├── memory_tools_test.go  # Memory tool tests
+│           ├── time.go               # Time tool (NewGetCurrentTimeTool, GetCurrentTime)
+│           └── time_test.go          # Time tool tests
 ├── AGENTS.md                   # AI agent definitions index
 ├── CONTEXT.md                  # This file
 ├── Dockerfile                  # Multi-stage container build
@@ -145,11 +185,11 @@ go-agent/
 
 | Concern | Location |
 |---------|----------|
+| Core agent extensions | `internal/domain/agent/` |
+| New domain events | `internal/domain/agent/events.go` |
+| OpenAI API structures | `internal/domain/openai/` |
 | New domain use cases | `internal/domain/<domain>/` |
 | New infrastructure adapters | `internal/adapters/outbound/` |
-| Core agent library extensions | `pkg/agent/` |
-| New domain events | `pkg/agent/events.go` |
-| OpenAI API structures | `pkg/openai/` |
 | Tests | Same directory as source, `*_test.go` |
 
 ---
@@ -166,7 +206,26 @@ go-agent/
 - **Method chaining**: Builder pattern with `With*` methods returning the modified type
 - **No global state**: All state is contained in structs
 
-### 5.2 Naming
+### 5.2 File Organization
+
+Files are organized by **functionality**, not by DDD element type:
+
+- **Group related code together**: Types, constructors, and methods for a single entity belong in one file
+- **Name files by feature**: `calculate.go` (not `service.go`), `message.go` (not `entities.go`)
+- **Keep private types with their users**: Helper types belong in the file that uses them
+- **Shared types in dedicated files**: Cross-cutting types go in `errors.go`, `events.go`, `value_objects.go`
+
+**Examples:**
+- `calculate.go`: Contains `Calculate()`, `NewCalculateTool()`, `calculateArgs`, and the expression parser
+- `message.go`: Contains `Message`, `LLMResponse`, constructors, and all their methods
+- `errors.go`: Contains all error types and sentinel errors for the package
+
+**Anti-patterns to avoid:**
+- Monolithic `entities.go` files containing unrelated types
+- Separating types from their methods across files
+- Using generic file names like `service.go` when multiple services exist
+
+### 5.3 Naming
 
 | Element | Convention | Example |
 |---------|------------|---------|
@@ -181,7 +240,7 @@ go-agent/
 | ID types | `<Entity>ID` | `AgentID`, `TaskID` |
 | Status types | `<Entity>Status` | `TaskStatus`, `ToolCallStatus` |
 
-### 5.3 Error Handling & Logging
+### 5.4 Error Handling & Logging
 
 **Error Handling:**
 - Use sentinel errors for common conditions: `ErrMaxIterationsReached`, `ErrToolNotFound`
@@ -191,13 +250,13 @@ go-agent/
 - Return errors up the call stack; let callers decide how to handle
 
 **Logging:**
-- No logging in library code (`pkg/agent/`)
+- No logging in core domain code (`internal/domain/agent/`)
 - Adapters support optional structured logging via `WithLogger(*slog.Logger)`
 - Use `logging.NewJsonLogger()` from cloud-native-utils for JSON output
 - Log level controlled by `LOGGING_LEVEL` environment variable (DEBUG, INFO, WARN, ERROR)
 - Use hooks for additional observability in applications
 
-### 5.4 Testing
+### 5.5 Testing
 
 **Framework:** Standard `testing` package with `cloud-native-utils/assert`
 
@@ -231,7 +290,7 @@ func Test_Example_Should_Work(t *testing.T) {
 - Use interface boundaries for testability
 - No external mocking libraries
 
-### 5.5 Formatting & Linting
+### 5.6 Formatting & Linting
 
 **Tools:**
 - `gofmt` / `goimports`: Standard Go formatting
@@ -257,7 +316,7 @@ The core abstraction is the **Observe → Decide → Act → Update** loop in `T
 
 ### Ports (Interfaces)
 
-Located in `pkg/agent/ports_outbound.go`:
+Located in `internal/domain/agent/ports_outbound.go`:
 
 | Port | Responsibility | Adapter |
 |------|----------------|---------|
@@ -265,10 +324,11 @@ Located in `pkg/agent/ports_outbound.go`:
 | `ToolExecutor` | Register and execute tools | `ToolExecutor` |
 | `EventPublisher` | Publish domain events | `EventPublisher` |
 | `ConversationStore` | Persist and load conversation history | `ConversationStore`, `EncryptedConversationStore` |
+| `MemoryStore` | Persist and search memory notes | `MemoryStore` |
 
 ### Hooks/Middleware
 
-Located in `pkg/agent/service.go`. Available hooks:
+Located in `internal/domain/agent/service.go`. Available hooks:
 
 | Hook | When Called | Use Case |
 |------|-------------|----------|
@@ -281,7 +341,7 @@ Located in `pkg/agent/service.go`. Available hooks:
 
 ### Domain Events
 
-Located in `pkg/agent/events.go`:
+Located in `internal/domain/agent/events.go`:
 
 | Event | Topic | When Emitted |
 |-------|-------|--------------|
@@ -423,11 +483,13 @@ messages, err := encStore.Load(ctx, agentID)
 
 ## 7. Using This Repo as a Template
 
+This repository is designed as a **template** for building LLM-powered applications. All code lives under `internal/`, making it straightforward to fork and customize.
+
 ### What Must Be Preserved
 
-- **Directory structure**: `cmd/`, `internal/`, `pkg/` layout
+- **Directory structure**: `cmd/`, `internal/domain/`, `internal/adapters/` layout
 - **Port/adapter pattern**: Infrastructure behind interfaces
-- **Agent library API**: `NewAgent()`, `NewTaskService()`, hooks pattern
+- **Agent framework API**: `NewAgent()`, `NewTaskService()`, hooks pattern
 - **Testing conventions**: Naming, Arrange-Act-Assert, assert library
 - **Error handling**: Typed errors with `Unwrap()` support
 
@@ -435,9 +497,10 @@ messages, err := encStore.Load(ctx, agentID)
 
 | Customization | Location |
 |---------------|----------|
-| New tools | `internal/adapters/outbound/tool_executor.go` |
-| New LLM providers | New adapter implementing `LLMClient` |
+| New tools | `internal/domain/tooling/` and `internal/adapters/outbound/tool_executor.go` |
+| New LLM providers | New adapter implementing `LLMClient` in `internal/adapters/outbound/` |
 | New use cases | `internal/domain/<domain>/` |
+| Core agent extensions | `internal/domain/agent/` |
 | Custom hooks | Application code using `WithHooks()` |
 | System prompts | Application configuration |
 | Agent options | `WithMaxIterations()`, `WithMaxMessages()`, etc. |

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/andygeiss/go-agent/pkg/agent"
+	"github.com/andygeiss/go-agent/internal/domain/agent"
 )
 
 // memoryWriteArgs represents the arguments for the memory_write tool.

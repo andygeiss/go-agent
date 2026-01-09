@@ -7,7 +7,7 @@ import (
 
 	"github.com/andygeiss/cloud-native-utils/resource"
 	"github.com/andygeiss/cloud-native-utils/slices"
-	"github.com/andygeiss/go-agent/pkg/agent"
+	"github.com/andygeiss/go-agent/internal/domain/agent"
 )
 
 // ErrMemoryNoteNotFound is returned when a note is not found.

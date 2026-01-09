@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/andygeiss/cloud-native-utils/security"
-	"github.com/andygeiss/go-agent/pkg/agent"
+	"github.com/andygeiss/go-agent/internal/domain/agent"
 )
 
 // EncryptedConversationStore wraps a ConversationStore to encrypt messages at rest.

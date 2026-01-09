@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/andygeiss/cloud-native-utils/stability"
-	"github.com/andygeiss/go-agent/pkg/agent"
+	"github.com/andygeiss/go-agent/internal/domain/agent"
 )
 
 // Default configuration for tool execution.

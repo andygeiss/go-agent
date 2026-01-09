@@ -14,8 +14,8 @@ import (
 	"github.com/andygeiss/cloud-native-utils/service"
 	"github.com/andygeiss/cloud-native-utils/slices"
 	"github.com/andygeiss/cloud-native-utils/stability"
-	"github.com/andygeiss/go-agent/pkg/agent"
-	"github.com/andygeiss/go-agent/pkg/openai"
+	"github.com/andygeiss/go-agent/internal/domain/agent"
+	"github.com/andygeiss/go-agent/internal/domain/openai"
 )
 
 // Default configuration for LLM client resilience.

@@ -19,15 +19,15 @@ This document catalogs the external vendor libraries used in this project, expla
 | Package | Description | Used In |
 |---------|-------------|---------|
 | `assert` | Minimal test assertion helper | All `*_test.go` files |
-| `efficiency` | Parallel processing (Generate, Process) | `pkg/agent/task_service.go` |
-| `event` | Event interfaces (Event, Publisher, Subscriber, Handler, Factory) | `pkg/agent/ports_outbound.go`, `adapters/outbound/event_publisher.go` |
-| `logging` | Structured JSON logging via `log/slog` | `adapters/outbound/openai_client.go`, `adapters/outbound/tool_executor.go` |
-| `messaging` | Message dispatcher for event publishing | `adapters/outbound/event_publisher.go` |
-| `resource` | Generic CRUD storage (InMemory, JsonFile, etc.) | `adapters/outbound/conversation_store.go` |
-| `security` | AES-GCM encryption for data at rest | `adapters/outbound/encrypted_conversation_store.go` |
-| `service` | Context-aware function type `Function[IN, OUT]` | `adapters/outbound/openai_client.go`, `adapters/outbound/tool_executor.go` |
-| `slices` | Generic slice utilities (Filter, Map, Unique, etc.) | `pkg/agent/agent.go`, `pkg/agent/tool_definition.go`, `adapters/outbound/openai_client.go` |
-| `stability` | Resilience patterns (timeout, retry, circuit breaker, debounce) | `adapters/outbound/openai_client.go`, `adapters/outbound/tool_executor.go` |
+| `efficiency` | Parallel processing (Generate, Process) | `internal/domain/agent/task_service.go` |
+| `event` | Event interfaces (Event, Publisher, Subscriber, Handler, Factory) | `internal/domain/agent/events.go`, `internal/adapters/outbound/event_publisher.go` |
+| `logging` | Structured JSON logging via `log/slog` | `internal/adapters/outbound/openai_client.go`, `internal/adapters/outbound/tool_executor.go` |
+| `messaging` | Message dispatcher for event publishing | `internal/adapters/outbound/event_publisher.go` |
+| `resource` | Generic CRUD storage (InMemory, JsonFile, etc.) | `internal/adapters/outbound/conversation_store.go` |
+| `security` | AES-GCM encryption for data at rest | `internal/adapters/outbound/encrypted_conversation_store.go` |
+| `service` | Context-aware function type `Function[IN, OUT]` | `internal/adapters/outbound/openai_client.go`, `internal/adapters/outbound/tool_executor.go` |
+| `slices` | Generic slice utilities (Filter, Map, Unique, etc.) | `internal/domain/agent/agent.go`, `internal/domain/agent/tool_definition.go`, `internal/adapters/outbound/openai_client.go` |
+| `stability` | Resilience patterns (timeout, retry, circuit breaker, debounce) | `internal/adapters/outbound/openai_client.go`, `internal/adapters/outbound/tool_executor.go` |
 
 #### When to Use
 

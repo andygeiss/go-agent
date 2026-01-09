@@ -23,7 +23,7 @@ A **production-ready** Go library implementing the **Observe → Decide → Act 
 - **LLM Integration** - OpenAI-compatible API support (works with LM Studio, OpenAI, etc.)
 - **Memory Management** - Configurable message limits to prevent context overflow
 - **Parallel Tool Execution** - Execute multiple tool calls concurrently for improved performance
-- **Reusable Library** - Import `pkg/agent` to build LLM-powered applications
+- **Reusable Library** - Import `internal/domain/agent` to build LLM-powered applications
 - **Tool Calling** - Extensible tool system with typed parameter definitions
 - **Typed Errors** - Structured error handling with `errors.Is`/`errors.As` support
 
@@ -103,18 +103,25 @@ go-agent/
 ├── internal/
 │   ├── adapters/outbound/      # Infrastructure adapters (LLM, tools, events)
 │   └── domain/
-│       ├── chatting/           # Chatting domain (use cases)
+│       ├── agent/              # Core agent framework
+│       │   ├── agent.go            # Agent aggregate with options
+│       │   ├── conversation.go     # Conversation management
+│       │   ├── errors.go           # Typed errors (LLMError, ToolError, TaskError)
+│       │   ├── events.go           # Domain events
+│       │   ├── hooks.go            # Lifecycle hooks
+│       │   ├── llm.go              # LLMClient port and LLMResponse
+│       │   ├── memory.go           # MemoryStore port
+│       │   ├── message.go          # Message entity
+│       │   ├── shared.go           # Shared types and constants
+│       │   ├── task.go             # Task entity
+│       │   ├── task_service.go     # TaskService (agent loop orchestration)
+│       │   ├── tool_call.go        # ToolCall entity
+│       │   ├── tool_definition.go  # ToolDefinition with parameter validation
+│       │   └── tools.go            # ToolExecutor port
+│       ├── openai/             # OpenAI API structures
+│       ├── chatting/           # Chatting domain (SendMessage, ClearConversation, GetAgentStats)
+│       ├── memorizing/         # Memory management domain (WriteNote, SearchNotes, GetNote, DeleteNote)
 │       └── tooling/            # Tooling domain (Calculate, GetCurrentTime)
-├── pkg/
-│   ├── agent/                  # Reusable agent library
-│   │   ├── aggregate.go        # Agent aggregate with options
-│   │   ├── entities.go         # LLMResponse, Message, Task, ToolCall, ToolDefinition
-│   │   ├── errors.go           # Typed errors (LLMError, ToolError, TaskError)
-│   │   ├── events.go           # Domain events
-│   │   ├── ports_outbound.go   # Interfaces (LLMClient, ToolExecutor)
-│   │   ├── service.go          # Hooks, TaskService (agent loop orchestration)
-│   │   └── value_objects.go    # ID types, Result, Role/Status constants
-│   └── openai/                 # OpenAI API structures
 ```
 
 ## Available Commands
@@ -163,7 +170,7 @@ go run ./cmd/cli \
 
 ## Architecture
 
-The project provides a reusable agent library in `pkg/agent/`:
+The project provides a reusable agent library in `internal/domain/agent/`:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -171,7 +178,7 @@ The project provides a reusable agent library in `pkg/agent/`:
 └─────────────────────────────┬───────────────────────────────┘
                               │
 ┌─────────────────────────────▼───────────────────────────────┐
-│                     pkg/agent Library                       │
+│                 internal/domain/agent Library               │
 │  • Agent, Task, Message     • TaskService (Agent Loop)      │
 │  • LLMClient interface      • ToolExecutor interface        │
 └─────────────────────────────┬───────────────────────────────┘
@@ -186,7 +193,7 @@ The project provides a reusable agent library in `pkg/agent/`:
 
 ```go
 import (
-    "github.com/andygeiss/go-agent/pkg/agent"
+    "github.com/andygeiss/go-agent/internal/domain/agent"
 )
 
 // Create agent infrastructure
@@ -243,7 +250,7 @@ import (
     "time"
 
     "github.com/andygeiss/go-agent/internal/adapters/outbound"
-    "github.com/andygeiss/go-agent/pkg/agent"
+    "github.com/andygeiss/go-agent/internal/domain/agent"
 )
 
 func main() {

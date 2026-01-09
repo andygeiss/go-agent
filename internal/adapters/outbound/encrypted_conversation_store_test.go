@@ -7,7 +7,7 @@ import (
 	"github.com/andygeiss/cloud-native-utils/assert"
 	"github.com/andygeiss/cloud-native-utils/security"
 	"github.com/andygeiss/go-agent/internal/adapters/outbound"
-	"github.com/andygeiss/go-agent/pkg/agent"
+	"github.com/andygeiss/go-agent/internal/domain/agent"
 )
 
 func Test_EncryptedConversationStore_Save_Should_EncryptMessages(t *testing.T) {

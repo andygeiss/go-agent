@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/andygeiss/cloud-native-utils/resource"
-	"github.com/andygeiss/go-agent/pkg/agent"
+	"github.com/andygeiss/go-agent/internal/domain/agent"
 )
 
 // Conversation represents the persisted conversation data for an agent.

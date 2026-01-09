@@ -9,8 +9,8 @@ import (
 
 	"github.com/andygeiss/cloud-native-utils/assert"
 	"github.com/andygeiss/go-agent/internal/adapters/outbound"
-	"github.com/andygeiss/go-agent/pkg/agent"
-	"github.com/andygeiss/go-agent/pkg/openai"
+	"github.com/andygeiss/go-agent/internal/domain/agent"
+	"github.com/andygeiss/go-agent/internal/domain/openai"
 )
 
 // -----------------------------------------------------------------------------

@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/andygeiss/cloud-native-utils/assert"
+	"github.com/andygeiss/go-agent/internal/domain/agent"
 	"github.com/andygeiss/go-agent/internal/domain/tooling"
-	"github.com/andygeiss/go-agent/pkg/agent"
 )
 
 // ErrMockNotFound is returned when a note is not found in the mock store.

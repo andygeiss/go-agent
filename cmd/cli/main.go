@@ -10,9 +10,9 @@ import (
 
 	"github.com/andygeiss/cloud-native-utils/messaging"
 	"github.com/andygeiss/go-agent/internal/adapters/outbound"
+	"github.com/andygeiss/go-agent/internal/domain/agent"
 	"github.com/andygeiss/go-agent/internal/domain/chatting"
 	"github.com/andygeiss/go-agent/internal/domain/tooling"
-	"github.com/andygeiss/go-agent/pkg/agent"
 )
 
 const defaultSystemPrompt = `You are a helpful AI assistant. You can use tools to help answer questions.
