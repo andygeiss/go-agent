@@ -19,31 +19,31 @@ A reusable AI agent framework for Go implementing the **observe → decide → a
 
 **go-agent** provides a clean, production-ready foundation for building AI agents with tool use capabilities in Go. It features:
 
-- 🔄 **Agent Loop Pattern** — Observe → Decide → Act → Update cycle for autonomous task execution
-- 🔧 **Tool Use** — Extensible tool system with type-safe definitions
-- 🛡️ **Built-in Resilience** — Retry, circuit breaker, timeout, and throttling patterns
-- 📡 **Event-Driven** — Observable task lifecycle via domain events
-- 🧠 **Memory System** — Long-term context storage with search capabilities
 - 🏗️ **Hexagonal Architecture** — Clean separation of domain logic and infrastructure
+- 🔄 **Agent Loop Pattern** — Observe → Decide → Act → Update cycle for autonomous task execution
+- 📡 **Event-Driven** — Observable task lifecycle via domain events
+- 🧠 **Memory System** — Long-term context storage with search and filtering capabilities
+- 🛡️ **Resilience Patterns** — Breaker, debounce, retry, throttle, and timeout
+- 🔧 **Tool Use** — Extensible tool system with type-safe definitions
 
-Works with any OpenAI-compatible API (LM Studio, OpenAI, vLLM, Ollama, etc.).
+Works with any OpenAI-compatible API (LM Studio, Ollama, OpenAI, vLLM, etc.).
 
 ---
 
 ## Table of Contents
 
-- [Installation](#installation)
-- [Quick Start](#quick-start)
 - [Architecture](#architecture)
-- [Features](#features)
 - [CLI Usage](#cli-usage)
-- [Creating Custom Tools](#creating-custom-tools)
 - [Configuration](#configuration)
-- [Docker](#docker)
-- [Project Structure](#project-structure)
-- [Testing](#testing)
 - [Contributing](#contributing)
+- [Creating Custom Tools](#creating-custom-tools)
+- [Docker](#docker)
+- [Features](#features)
+- [Installation](#installation)
 - [License](#license)
+- [Project Structure](#project-structure)
+- [Quick Start](#quick-start)
+- [Testing](#testing)
 
 ---
 
@@ -53,7 +53,7 @@ Works with any OpenAI-compatible API (LM Studio, OpenAI, vLLM, Ollama, etc.).
 go get github.com/andygeiss/go-agent
 ```
 
-**Requirements:** Go 1.25+
+**Requirements:** Go 1.25.5+
 
 ---
 
@@ -162,33 +162,51 @@ For detailed architecture documentation, see [CONTEXT.md](CONTEXT.md).
 
 ## Features
 
-### Built-in Tools
+### Built-in Tools (alphabetically sorted)
 
 | Tool | Description |
 |------|-------------|
-| `calculate` | Safe arithmetic expression evaluator |
-| `get_current_time` | Returns current date and time |
-| Memory tools | Read/write/search long-term memory |
+| `calculate` | Safe arithmetic expression evaluator with operator precedence |
+| `get_current_time` | Returns current date and time in RFC3339 format |
+| `memory_get` | Retrieve a specific memory note by ID |
+| `memory_search` | Search memory notes with query and filters |
+| `memory_write` | Store a new memory note with metadata |
 
-### Domain Events
+### Domain Events (alphabetically sorted)
 
 Subscribe to task lifecycle events:
 
-- `agent.task.started` — Task begins execution
 - `agent.task.completed` — Task finishes successfully
 - `agent.task.failed` — Task terminates with error
+- `agent.task.started` — Task begins execution
 - `agent.toolcall.executed` — Tool call completes
 
-### Lifecycle Hooks
+### Lifecycle Hooks (alphabetically sorted)
 
 ```go
 hooks := agent.NewHooks().
-    WithBeforeTask(func(ctx context.Context, ag *agent.Agent, t *agent.Task) error {
-        log.Println("Starting task:", t.Name)
+    WithAfterLLMCall(func(ctx context.Context, ag *agent.Agent, t *agent.Task) error {
+        log.Println("LLM response received")
+        return nil
+    }).
+    WithAfterTask(func(ctx context.Context, ag *agent.Agent, t *agent.Task) error {
+        log.Println("Task finished:", t.Status)
         return nil
     }).
     WithAfterToolCall(func(ctx context.Context, ag *agent.Agent, tc *agent.ToolCall) error {
         log.Println("Tool executed:", tc.Name, "→", tc.Result)
+        return nil
+    }).
+    WithBeforeLLMCall(func(ctx context.Context, ag *agent.Agent, t *agent.Task) error {
+        log.Println("Calling LLM...")
+        return nil
+    }).
+    WithBeforeTask(func(ctx context.Context, ag *agent.Agent, t *agent.Task) error {
+        log.Println("Starting task:", t.Name)
+        return nil
+    }).
+    WithBeforeToolCall(func(ctx context.Context, ag *agent.Agent, tc *agent.ToolCall) error {
+        log.Println("Executing tool:", tc.Name)
         return nil
     })
 
@@ -197,12 +215,13 @@ taskService.WithHooks(hooks)
 
 ### Resilience Patterns
 
-The `OpenAIClient` includes configurable resilience:
+The `OpenAIClient` includes configurable resilience (alphabetically sorted):
 
-- **Timeout**: HTTP (60s) and LLM call (120s) timeouts
-- **Retry**: 3 attempts with 2s delay
-- **Circuit Breaker**: Opens after 5 consecutive failures
-- **Throttling**: Rate limiting (disabled by default)
+- **Circuit Breaker**: Opens after 5 consecutive failures (configurable)
+- **Debounce**: Coalesces rapid calls (disabled by default)
+- **Retry**: 3 attempts with 2s delay (configurable)
+- **Throttling**: Rate limiting via token bucket (disabled by default)
+- **Timeout**: HTTP (60s) and LLM call (120s) timeouts (configurable)
 
 ---
 
@@ -212,22 +231,22 @@ The `OpenAIClient` includes configurable resilience:
 go run ./cmd/cli [flags]
 ```
 
-### Commands (during chat)
+### Commands (during chat, alphabetically sorted)
 
 | Command | Description |
 |---------|-------------|
-| `quit` / `exit` | Exit the CLI |
 | `clear` | Reset conversation history |
+| `quit` / `exit` | Exit the CLI |
 | `stats` | Show agent statistics |
 
-### Flags
+### Flags (alphabetically sorted)
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-url` | `http://localhost:1234` | LLM API base URL |
-| `-model` | `$LM_STUDIO_MODEL` | Model name |
 | `-max-iterations` | `10` | Max iterations per task |
 | `-max-messages` | `50` | Max messages to retain (0 = unlimited) |
+| `-model` | `$LM_STUDIO_MODEL` | Model name |
+| `-url` | `http://localhost:1234` | LLM API base URL |
 | `-verbose` | `false` | Show detailed metrics |
 
 ---
@@ -278,7 +297,7 @@ executor.RegisterToolDefinition(myTool.Definition)
 
 ## Configuration
 
-### Agent Options
+### Agent Options (alphabetically sorted)
 
 ```go
 agent.NewAgent("id", "system prompt",
@@ -291,22 +310,25 @@ agent.NewAgent("id", "system prompt",
 )
 ```
 
-### LLM Client Options
+### LLM Client Options (alphabetically sorted)
 
 ```go
 client := outbound.NewOpenAIClient(baseURL, model).
-    WithLLMTimeout(180 * time.Second).
-    WithRetry(5, 3*time.Second).
-    WithCircuitBreaker(10).
-    WithThrottle(100, 10, time.Second)  // tokens, refill, period
+    WithCircuitBreaker(10).                     // Open after 10 failures
+    WithDebounce(500 * time.Millisecond).       // Coalesce rapid calls
+    WithHTTPClient(customClient).               // Custom HTTP client
+    WithLLMTimeout(180 * time.Second).          // LLM call timeout
+    WithLogger(slog.Default()).                 // Structured logging
+    WithRetry(5, 3*time.Second).                // 5 attempts, 3s delay
+    WithThrottle(100, 10, time.Second)          // tokens, refill, period
 ```
 
 ### Task Service Options
 
 ```go
 taskService := agent.NewTaskService(llm, executor, publisher).
-    WithHooks(hooks).
-    WithParallelToolExecution()  // Enable parallel tool calls
+    WithHooks(hooks).                 // Lifecycle hooks
+    WithParallelToolExecution()       // Enable parallel tool calls
 ```
 
 ---
@@ -351,19 +373,27 @@ go test -bench=. ./internal/domain/agent/
 
 ```
 go-agent/
-├── cmd/cli/              # CLI application
+├── cmd/cli/                # CLI application
 ├── internal/
 │   ├── adapters/outbound/  # Infrastructure implementations
+│   │   ├── conversation_store.go       # ConversationStore → resource.Access
+│   │   ├── encrypted_conversation_store.go # AES-GCM encrypted variant
+│   │   ├── event_publisher.go          # EventPublisher → messaging.Dispatcher
+│   │   ├── memory_store.go             # MemoryStore → resource.Access
+│   │   ├── openai_client.go            # LLMClient → OpenAI-compatible API
+│   │   └── tool_executor.go            # ToolExecutor → tool registry
 │   └── domain/
-│       ├── agent/          # Core domain (Agent, Task, Message)
-│       ├── chatting/       # Chat use cases
-│       ├── memorizing/     # Memory use cases
-│       ├── tooling/        # Tool implementations
-│       └── openai/         # OpenAI API types
-├── AGENTS.md             # AI agent definitions
-├── CONTEXT.md            # Architecture documentation
+│       ├── agent/          # Core domain (Agent, Task, Message, Hooks, Events)
+│       ├── chatting/       # Chat use cases (SendMessage, ClearConversation, GetAgentStats)
+│       ├── memorizing/     # Memory use cases (WriteNote, GetNote, SearchNotes, DeleteNote)
+│       ├── openai/         # OpenAI API types (Request, Response, Tool)
+│       └── tooling/        # Tool implementations (calculate, time, memory_tools)
+├── AGENTS.md               # AI agent definitions
+├── CONTEXT.md              # Architecture documentation
 ├── Dockerfile
-└── docker-compose.yml
+├── docker-compose.yml
+├── README.md               # This file
+└── VENDOR.md               # Vendor library documentation
 ```
 
 ---
@@ -371,9 +401,10 @@ go-agent/
 ## Contributing
 
 1. Read [CONTEXT.md](CONTEXT.md) for architecture and conventions
-2. Follow the hexagonal architecture pattern
-3. Add tests for new functionality
-4. Run `go fmt ./...` and `go vet ./...` before committing
+2. Check [VENDOR.md](VENDOR.md) for approved vendor patterns
+3. Follow the hexagonal architecture pattern
+4. Add tests for new functionality
+5. Run `go fmt ./...` and `go vet ./...` before committing
 
 ---
 

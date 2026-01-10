@@ -12,88 +12,94 @@ This document describes the external vendor libraries used in go-agent and provi
 
 ### cloud-native-utils
 
-- **Purpose**: Comprehensive utility library for cloud-native Go applications providing resilience patterns, messaging, resource access, testing, and functional utilities.
+- **Purpose**: Comprehensive utility library for cloud-native Go applications providing resilience patterns, messaging, resource access, security, testing, and functional utilities.
 - **Repository**: [github.com/andygeiss/cloud-native-utils](https://github.com/andygeiss/cloud-native-utils)
-- **Version**: v0.4.12+ (see `go.mod`)
+- **Version**: v0.4.12 (see `go.mod`)
 
 This is the primary vendor dependency. It provides cross-cutting concerns that should **always** be used instead of rolling custom implementations.
 
 ---
 
-## Package Reference
+## Package Reference (alphabetically sorted)
 
-### stability — Resilience Patterns
+### assert — Testing Utilities
 
-**Import**: `github.com/andygeiss/cloud-native-utils/stability`
+**Import**: `github.com/andygeiss/cloud-native-utils/assert`
 
-**Purpose**: Wraps functions with resilience patterns to handle failures gracefully.
+**Purpose**: Fluent assertion library for tests.
 
-**Key Functions**:
+**Key Functions** (alphabetically sorted):
 
 | Function | Description |
 |----------|-------------|
-| `Timeout(fn, duration)` | Cancels execution if it exceeds the given duration |
-| `Retry(fn, attempts, delay)` | Retries failed calls with fixed delay between attempts |
-| `Breaker(fn, threshold)` | Opens circuit after consecutive failures, preventing cascading failures |
-| `Throttle(fn, tokens, refill, period)` | Rate limits calls using token bucket algorithm |
-| `Debounce(fn, period)` | Coalesces rapid successive calls into a single execution |
+| `That(t, slice).HasLength(n)` | Slice length assertion |
+| `That(t, str).Contains(substr)` | String contains assertion |
+| `That(t, actual).IsEqualTo(expected)` | Equality assertion |
+| `That(t, actual).IsFalse()` | Boolean false assertion |
+| `That(t, actual).IsNil()` | Nil assertion |
+| `That(t, actual).IsNotNil()` | Not-nil assertion |
+| `That(t, actual).IsTrue()` | Boolean true assertion |
 
 **When to use**:
-- Any external API call (LLM, HTTP, database)
-- Operations that may fail transiently
-- Rate-limited services
-- Protecting downstream systems from overload
+- All unit tests
+- Any test assertions
+- Integration tests
 
-**Integration pattern**: Adapters layer (`internal/adapters/outbound/`)
-
-**Example** (from `openai_client.go`):
-```go
-import "github.com/andygeiss/cloud-native-utils/stability"
-
-// Wrap with stability patterns (innermost to outermost)
-var fn service.Function[Input, Output] = baseFn
-fn = stability.Timeout(fn, 120*time.Second)
-fn = stability.Retry(fn, 3, 2*time.Second)
-fn = stability.Breaker(fn, 5)
-```
-
-**Cautions**:
-- Order matters: apply innermost first (timeout → retry → breaker)
-- Retry should wrap timeout so each attempt has its own timeout
-- Circuit breaker should be outermost to prevent retrying when circuit is open
-
----
-
-### messaging — Event Dispatching
-
-**Import**: `github.com/andygeiss/cloud-native-utils/messaging`
-
-**Purpose**: Decoupled event publishing and subscription.
-
-**Key Types**:
-
-| Type | Description |
-|------|-------------|
-| `Dispatcher` | Interface for publishing messages |
-| `Message` | Topic + payload container |
-| `NewExternalDispatcher()` | Creates dispatcher for external event systems |
-| `NewMessage(topic, payload)` | Creates a message with topic and byte payload |
-
-**When to use**:
-- Publishing domain events
-- Decoupling components via events
-- Integration with external event systems (Kafka, etc.)
-
-**Integration pattern**: Adapters layer (`internal/adapters/outbound/event_publisher.go`)
+**Integration pattern**: Test files (`*_test.go`)
 
 **Example**:
 ```go
-import "github.com/andygeiss/cloud-native-utils/messaging"
+import "github.com/andygeiss/cloud-native-utils/assert"
 
-dispatcher := messaging.NewExternalDispatcher()
-msg := messaging.NewMessage("agent.task.completed", jsonPayload)
-dispatcher.Publish(ctx, msg)
+func TestMyFunction(t *testing.T) {
+    result := MyFunction()
+    assert.That(t, result).IsEqualTo(expected)
+    assert.That(t, err).IsNil()
+}
 ```
+
+---
+
+### efficiency — Parallel Processing
+
+**Import**: `github.com/andygeiss/cloud-native-utils/efficiency`
+
+**Purpose**: Worker pool and channel-based parallel processing.
+
+**Key Functions** (alphabetically sorted):
+
+| Function | Description |
+|----------|-------------|
+| `Generate(items...)` | Creates a channel from items |
+| `Process(inCh, fn)` | Processes items in parallel, returns output and error channels |
+
+**When to use**:
+- Batch processing
+- I/O-bound operations that benefit from concurrency
+- Parallel tool execution
+
+**Integration pattern**: Domain layer (`internal/domain/agent/service.go`)
+
+**Example** (from `service.go`):
+```go
+import "github.com/andygeiss/cloud-native-utils/efficiency"
+
+// Generate input channel
+inCh := efficiency.Generate(inputs...)
+
+// Process in parallel
+outCh, errCh := efficiency.Process(inCh, processorFn)
+
+// Collect results
+for result := range outCh {
+    // handle result
+}
+```
+
+**Cautions**:
+- Collect all results before checking errors
+- Results may arrive out of order
+- Use for I/O-bound work; CPU-bound may not benefit
 
 ---
 
@@ -110,8 +116,8 @@ dispatcher.Publish(ctx, msg)
 | `Event` | Interface requiring `Topic() string` method |
 
 **When to use**:
-- Defining domain events
 - Any event type that needs to be published
+- Defining domain events
 
 **Integration pattern**: Domain layer (`internal/domain/agent/events.go`)
 
@@ -120,13 +126,46 @@ dispatcher.Publish(ctx, msg)
 import "github.com/andygeiss/cloud-native-utils/event"
 
 type EventTaskCompleted struct {
-    TaskID string `json:"task_id"`
     Output string `json:"output"`
+    TaskID string `json:"task_id"`
 }
 
 func (e EventTaskCompleted) Topic() string {
     return "agent.task.completed"
 }
+```
+
+---
+
+### messaging — Event Dispatching
+
+**Import**: `github.com/andygeiss/cloud-native-utils/messaging`
+
+**Purpose**: Decoupled event publishing and subscription.
+
+**Key Types** (alphabetically sorted):
+
+| Type | Description |
+|------|-------------|
+| `Dispatcher` | Interface for publishing messages |
+| `Message` | Topic + payload container |
+| `NewExternalDispatcher()` | Creates dispatcher for external event systems |
+| `NewMessage(topic, payload)` | Creates a message with topic and byte payload |
+
+**When to use**:
+- Decoupling components via events
+- Integration with external event systems (Kafka, etc.)
+- Publishing domain events
+
+**Integration pattern**: Adapters layer (`internal/adapters/outbound/event_publisher.go`)
+
+**Example**:
+```go
+import "github.com/andygeiss/cloud-native-utils/messaging"
+
+dispatcher := messaging.NewExternalDispatcher()
+msg := messaging.NewMessage("agent.task.completed", jsonPayload)
+dispatcher.Publish(ctx, msg)
 ```
 
 ---
@@ -137,7 +176,7 @@ func (e EventTaskCompleted) Topic() string {
 
 **Purpose**: Generic CRUD interface with multiple backend implementations.
 
-**Key Types**:
+**Key Types** (alphabetically sorted):
 
 | Type | Description |
 |------|-------------|
@@ -146,21 +185,25 @@ func (e EventTaskCompleted) Topic() string {
 | `NewJsonFileAccess[K, V](path)` | JSON file persistence |
 | `NewYamlFileAccess[K, V](path)` | YAML file persistence |
 
-**Key Methods** on `Access[K, V]`:
+**Key Methods** on `Access[K, V]` (alphabetically sorted):
 - `Create(ctx, key, value)` — Create new record
+- `Delete(ctx, key)` — Delete record
 - `Read(ctx, key)` — Read single record
 - `ReadAll(ctx)` — Read all records
 - `Update(ctx, key, value)` — Update existing record
-- `Delete(ctx, key)` — Delete record
+
+**Error Constants**:
+- `ErrorResourceAlreadyExists` — Returned when creating duplicate key
+- `ErrorResourceNotFound` — Returned when key doesn't exist
 
 **When to use**:
 - Persisting domain entities
-- Testing with in-memory backends
 - Simple file-based storage (conversations, memory notes)
+- Testing with in-memory backends
 
-**Integration pattern**: Adapters layer (`internal/adapters/outbound/memory_store.go`, `conversation_store.go`)
+**Integration pattern**: Adapters layer (`internal/adapters/outbound/conversation_store.go`, `memory_store.go`)
 
-**Example**:
+**Example** (from adapters):
 ```go
 import "github.com/andygeiss/cloud-native-utils/resource"
 
@@ -188,19 +231,19 @@ entity, err := access.Read(ctx, "key-1")
 
 **Purpose**: AES-GCM encryption for data at rest.
 
-**Key Functions**:
+**Key Functions** (alphabetically sorted):
 
 | Function | Description |
 |----------|-------------|
-| `Encrypt(plaintext, key)` | Encrypts data with AES-GCM |
 | `Decrypt(ciphertext, key)` | Decrypts AES-GCM encrypted data |
+| `Encrypt(plaintext, key)` | Encrypts data with AES-GCM |
 | `GenerateKey()` | Generates a random 32-byte key |
 | `Getenv(varName)` | Reads key from environment variable |
 
 **When to use**:
+- Any data that should not be readable in storage
 - Encrypting sensitive data at rest
 - Storing conversation history securely
-- Any data that should not be readable in storage
 
 **Integration pattern**: Adapters layer (`internal/adapters/outbound/encrypted_conversation_store.go`)
 
@@ -219,9 +262,43 @@ plaintext, err := security.Decrypt(ciphertext, key)
 ```
 
 **Cautions**:
+- Each encryption generates a unique nonce (ciphertext is non-deterministic)
 - Key must be exactly 32 bytes (AES-256)
 - Store keys securely (environment variables, secrets manager)
-- Each encryption generates a unique nonce (ciphertext is non-deterministic)
+
+---
+
+### service — Service Patterns
+
+**Import**: `github.com/andygeiss/cloud-native-utils/service`
+
+**Purpose**: Common service patterns and function type definitions.
+
+**Key Types**:
+
+| Type | Description |
+|------|-------------|
+| `Function[I, O]` | Generic function signature `func(ctx, input) (output, error)` |
+
+**When to use**:
+- Defining typed functions for stability wrappers
+- Service composition patterns
+
+**Integration pattern**: Adapters layer (used with stability patterns)
+
+**Example** (from `openai_client.go`):
+```go
+import "github.com/andygeiss/cloud-native-utils/service"
+
+var fn service.Function[MyInput, MyOutput] = func(ctx context.Context, in MyInput) (MyOutput, error) {
+    // implementation
+}
+
+// Chain with stability patterns
+fn = stability.Timeout(fn, 120*time.Second)
+fn = stability.Retry(fn, 3, 2*time.Second)
+fn = stability.Breaker(fn, 5)
+```
 
 ---
 
@@ -231,19 +308,19 @@ plaintext, err := security.Decrypt(ciphertext, key)
 
 **Purpose**: Functional programming utilities for slices (filter, map, etc.).
 
-**Key Functions**:
+**Key Functions** (alphabetically sorted):
 
 | Function | Description |
 |----------|-------------|
+| `Contains(slice, element)` | Checks if element exists |
 | `Filter(slice, predicate)` | Returns elements matching predicate |
 | `Map(slice, transform)` | Transforms each element |
-| `Contains(slice, element)` | Checks if element exists |
 | `Sort(slice, less)` | Sorts slice with custom comparator |
 
 **When to use**:
+- Any slice manipulation
 - Filtering collections (completed tasks, matching notes)
 - Transforming data between layers
-- Any slice manipulation
 
 **Integration pattern**: Domain layer (anywhere slices are processed)
 
@@ -260,44 +337,51 @@ func (a *Agent) CompletedTaskCount() int {
 
 ---
 
-### efficiency — Parallel Processing
+### stability — Resilience Patterns
 
-**Import**: `github.com/andygeiss/cloud-native-utils/efficiency`
+**Import**: `github.com/andygeiss/cloud-native-utils/stability`
 
-**Purpose**: Worker pool and channel-based parallel processing.
+**Purpose**: Wraps functions with resilience patterns to handle failures gracefully.
 
-**Key Functions**:
+**Key Functions** (alphabetically sorted):
 
 | Function | Description |
 |----------|-------------|
-| `Generate(items...)` | Creates a channel from items |
-| `Process(inCh, fn)` | Processes items in parallel, returns output and error channels |
+| `Breaker(fn, threshold)` | Opens circuit after consecutive failures, preventing cascading failures |
+| `Debounce(fn, period)` | Coalesces rapid successive calls into a single execution |
+| `Retry(fn, attempts, delay)` | Retries failed calls with fixed delay between attempts |
+| `Throttle(fn, tokens, refill, period)` | Rate limits calls using token bucket algorithm |
+| `Timeout(fn, duration)` | Cancels execution if it exceeds the given duration |
 
 **When to use**:
-- Parallel tool execution
-- Batch processing
-- I/O-bound operations that benefit from concurrency
+- Any external API call (LLM, HTTP, database)
+- Operations that may fail transiently
+- Protecting downstream systems from overload
+- Rate-limited services
 
-**Integration pattern**: Domain layer (`internal/domain/agent/task_service.go`)
+**Integration pattern**: Adapters layer (`internal/adapters/outbound/`)
 
-**Example**:
+**Example** (from `openai_client.go`):
 ```go
-import "github.com/andygeiss/cloud-native-utils/efficiency"
+import "github.com/andygeiss/cloud-native-utils/stability"
 
-// Generate input channel
-inCh := efficiency.Generate(items...)
-
-// Process in parallel
-outCh, errCh := efficiency.Process(inCh, processorFn)
-
-// Collect results
-for result := range outCh {
-    // handle result
+// Wrap with stability patterns (innermost to outermost)
+var fn service.Function[Input, Output] = baseFn
+fn = stability.Timeout(fn, 120*time.Second)  // 1. Timeout per attempt
+fn = stability.Retry(fn, 3, 2*time.Second)   // 2. Retry wraps timeout
+fn = stability.Breaker(fn, 5)                 // 3. Breaker prevents retries when open
+if throttleEnabled {
+    fn = stability.Throttle(fn, tokens, refill, period)  // 4. Rate limit
+}
+if debounceEnabled {
+    fn = stability.Debounce(fn, period)       // 5. Coalesce rapid calls
 }
 ```
 
 **Cautions**:
-- Results may arrive out of order
+- Circuit breaker should be outermost to prevent retrying when circuit is open
+- Order matters: apply innermost first (timeout → retry → breaker → throttle → debounce)
+- Retry should wrap timeout so each attempt has its own timeout
 - Collect all results before checking errors
 - Use for I/O-bound work; CPU-bound may not benefit
 
@@ -370,27 +454,27 @@ func TestMyFunction(t *testing.T) {
 
 ---
 
-## Cross-cutting Concerns and Recommended Patterns
+## Cross-cutting Concerns and Recommended Patterns (alphabetically sorted)
+
+### Event Publishing
+- Define events in domain with `event.Event` interface
+- Keep events immutable with constructor functions
+- Publish via adapter using `messaging.Dispatcher`
 
 ### Resilience
 - **Always** use `stability` package for external calls
 - Apply patterns in order: timeout → retry → breaker → throttle → debounce
 - Configure defaults, allow override via `With*` methods
 
-### Event Publishing
-- Define events in domain with `event.Event` interface
-- Publish via adapter using `messaging.Dispatcher`
-- Keep events immutable with constructor functions
-
 ### Storage
-- Use `resource.Access` for persistence
 - In-memory for tests, file-based for development, extend for production databases
-- Wrap with encryption when needed
+- Use `resource.Access` for persistence
+- Wrap with `security.Encrypt/Decrypt` when needed
 
 ### Testing
-- Use `assert` package for all assertions
 - Prefer in-memory backends for unit tests
 - Table-driven tests with descriptive names
+- Use `assert` package for all assertions
 
 ---
 
@@ -399,8 +483,8 @@ func TestMyFunction(t *testing.T) {
 | Library | Reason | Alternative |
 |---------|--------|-------------|
 | `github.com/stretchr/testify` | Duplication with `cloud-native-utils/assert` | Use `assert` |
-| Custom retry loops | Already provided by stability | Use `stability.Retry` |
 | Custom circuit breakers | Already provided by stability | Use `stability.Breaker` |
+| Custom retry loops | Already provided by stability | Use `stability.Retry` |
 | Manual encryption | Complex, error-prone | Use `security.Encrypt/Decrypt` |
 
 ---
@@ -426,4 +510,4 @@ Check [cloud-native-utils releases](https://github.com/andygeiss/cloud-native-ut
 
 - [CONTEXT.md](CONTEXT.md) — Architecture and conventions
 - [README.md](README.md) — User-facing documentation
-- [cloud-native-utils](https://pkg.go.dev/github.com/andygeiss/cloud-native-utils) — Package documentation
+- [cloud-native-utils GoDoc](https://pkg.go.dev/github.com/andygeiss/cloud-native-utils) — Package documentation
