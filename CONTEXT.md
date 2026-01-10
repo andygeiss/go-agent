@@ -8,7 +8,7 @@
 - OpenAI-compatible API integration (works with LM Studio and other local LLMs)
 - Built-in resilience patterns (debounce, retry, circuit breaker, throttle, timeout)
 - Event-driven architecture for task lifecycle observability
-- Memory system for long-term agent context with search and filtering
+- Memory system for long-term agent context with text search and embedding-based semantic search
 
 This repository serves as both a **production-ready library** and a **reference implementation** for building agentic applications in Go using hexagonal architecture patterns.
 
@@ -253,6 +253,7 @@ func Test_Agent_AddTask_With_Task_Should_AddToQueue(t *testing.T) {
 - Benchmarks: `Benchmark_*` functions in `*_test.go` (see `cmd/cli/main_test.go` for PGO benchmarks)
 
 **Benchmark categories** (in `cmd/cli/main_test.go`):
+- **Embedding Search Benchmarks** — Semantic similarity search at various dimensions (128, 512, 1536) and note counts (1000, 10000)
 - **FSWalker Benchmarks** — Real file system walking with/without ignore patterns
 - **Full Stack Benchmarks** — End-to-end use case execution with mock LLM
 - **Index Store Benchmarks** — Snapshot save/get operations
@@ -339,10 +340,30 @@ Available hooks (alphabetically sorted):
 ### Memory system
 
 Memory notes store long-term context:
-- `MemoryNote` — Atomic unit with metadata, tags, keywords, importance (1-5 scale)
+- `MemoryNote` — Atomic unit with metadata, tags, keywords, importance (1-5 scale), and optional embedding
 - `MemoryStore` — Interface with in-memory and JSON file implementations
 - `MemorySearchOptions` — Filter by SessionID, TaskID, UserID, Tags, SourceTypes, MinImportance
 - `SourceType` — Categorizes note origin (see Memory Schemas below)
+
+**Embedding-based semantic search:**
+
+Memory notes can store vector embeddings for semantic similarity search:
+
+```go
+// Store a note with an embedding (embeddings generated externally)
+note := agent.NewMemoryNote("note-1", agent.SourceTypeFact).
+    WithRawContent("Go is a statically typed language").
+    WithEmbedding(embedding)  // []float32 from embedding model
+
+// Search with cosine similarity ranking
+results, _ := store.SearchWithEmbedding(ctx, "programming languages", queryEmbedding, 10, nil)
+```
+
+- `Embedding` type — `[]float32` vector representation
+- `WithEmbedding()` — Builder method to attach embedding to a note
+- `SearchWithEmbedding()` — Search ranked by cosine similarity
+- Falls back to importance-based sorting when no query embedding provided
+- Notes without embeddings score 0 in similarity ranking
 
 **Filter architecture** (in `memory_store.go`):
 ```go
@@ -679,9 +700,9 @@ docker-compose logs -f app
 
 ### Known limitations
 
-- Basic text search for memory (no embedding/vector similarity)
 - Single-agent design (no multi-agent orchestration)
 - Synchronous execution model (async support via goroutines)
+- Embeddings must be provided externally (no built-in embedding generation)
 
 ### Performance
 

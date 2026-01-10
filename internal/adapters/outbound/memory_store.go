@@ -3,6 +3,8 @@ package outbound
 import (
 	"context"
 	"errors"
+	"math"
+	"sort"
 	"strings"
 
 	"github.com/andygeiss/cloud-native-utils/resource"
@@ -57,35 +59,72 @@ func (s *MemoryStore) Write(ctx context.Context, note *agent.MemoryNote) error {
 
 // Search retrieves notes matching the query and filters.
 // This implementation performs basic text matching on SearchableText.
-// For production use with embeddings, extend or wrap this with vector similarity search.
+// Results are sorted by importance when no embedding is provided.
+// For semantic search with embeddings, use SearchWithEmbedding.
 func (s *MemoryStore) Search(ctx context.Context, query string, limit int, opts *agent.MemorySearchOptions) ([]*agent.MemoryNote, error) {
-	allNotes, err := s.access.ReadAll(ctx)
-	if err != nil {
-		return nil, err
-	}
+	return s.searchWithEmbedding(ctx, query, nil, limit, opts)
+}
 
+// SearchWithEmbedding retrieves notes matching the query and filters,
+// ranked by cosine similarity to the provided query embedding.
+// If queryEmbedding is nil, falls back to importance-based sorting.
+func (s *MemoryStore) SearchWithEmbedding(ctx context.Context, query string, queryEmbedding agent.Embedding, limit int, opts *agent.MemorySearchOptions) ([]*agent.MemoryNote, error) {
+	return s.searchWithEmbedding(ctx, query, queryEmbedding, limit, opts)
+}
+
+// collectCandidates filters notes and computes similarity scores.
+func collectCandidates(allNotes []agent.MemoryNote, query string, queryEmbedding agent.Embedding, opts *agent.MemorySearchOptions) []scoredNote {
 	queryLower := strings.ToLower(query)
-	var results []*agent.MemoryNote
+	candidates := make([]scoredNote, 0, len(allNotes))
 
 	for i := range allNotes {
 		note := &allNotes[i]
 
-		if !matchesFilters(note, opts) {
+		if !matchesFilters(note, opts) || !matchesQuery(note, queryLower) {
 			continue
 		}
 
-		if matchesQuery(note, queryLower) {
-			noteCopy := *note
-			results = append(results, &noteCopy)
-		}
+		score := computeSimilarityScore(queryEmbedding, note.Embedding)
+		noteCopy := *note
+		candidates = append(candidates, scoredNote{note: &noteCopy, score: score})
 	}
 
-	sortByImportance(results)
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
+	return candidates
+}
+
+// computeSimilarityScore returns cosine similarity if both embeddings exist, otherwise 0.
+func computeSimilarityScore(queryEmbedding, noteEmbedding agent.Embedding) float32 {
+	if len(queryEmbedding) > 0 && len(noteEmbedding) > 0 {
+		return cosineSimilarity(queryEmbedding, noteEmbedding)
+	}
+	return 0
+}
+
+// sortCandidates sorts by semantic score if embeddings were used, otherwise by importance.
+func sortCandidates(candidates []scoredNote, queryEmbedding agent.Embedding) {
+	if len(queryEmbedding) > 0 {
+		sort.Slice(candidates, func(i, j int) bool {
+			return candidates[i].score > candidates[j].score
+		})
+	} else {
+		sort.Slice(candidates, func(i, j int) bool {
+			return candidates[i].note.Importance > candidates[j].note.Importance
+		})
+	}
+}
+
+// extractResults extracts notes from candidates, respecting the limit.
+func extractResults(candidates []scoredNote, limit int) []*agent.MemoryNote {
+	if limit <= 0 || limit > len(candidates) {
+		limit = len(candidates)
 	}
 
-	return results, nil
+	results := make([]*agent.MemoryNote, limit)
+	for i := range limit {
+		results[i] = candidates[i].note
+	}
+
+	return results
 }
 
 // matchesFilters checks if a note passes all filter criteria.
@@ -164,6 +203,18 @@ func (s *MemoryStore) Delete(ctx context.Context, id agent.NoteID) error {
 	return err
 }
 
+// searchWithEmbedding is the internal implementation for search with optional embedding support.
+func (s *MemoryStore) searchWithEmbedding(ctx context.Context, query string, queryEmbedding agent.Embedding, limit int, opts *agent.MemorySearchOptions) ([]*agent.MemoryNote, error) {
+	allNotes, err := s.access.ReadAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	candidates := collectCandidates(allNotes, query, queryEmbedding, opts)
+	sortCandidates(candidates, queryEmbedding)
+	return extractResults(candidates, limit), nil
+}
+
 // hasAnyTag checks if the note has any of the specified tags.
 func hasAnyTag(note *agent.MemoryNote, tags []string) bool {
 	return slices.ContainsAny(note.Tags, tags)
@@ -183,16 +234,32 @@ func matchesKeywords(note *agent.MemoryNote, queryLower string) bool {
 	return false
 }
 
-// sortByImportance sorts notes by importance in descending order.
-// Uses a simple insertion sort for small lists.
-func sortByImportance(notes []*agent.MemoryNote) {
-	for i := 1; i < len(notes); i++ {
-		key := notes[i]
-		j := i - 1
-		for j >= 0 && notes[j].Importance < key.Importance {
-			notes[j+1] = notes[j]
-			j--
-		}
-		notes[j+1] = key
+// scoredNote pairs a memory note with its semantic similarity score.
+// Used for sorting search results by relevance.
+type scoredNote struct {
+	note  *agent.MemoryNote
+	score float32
+}
+
+// cosineSimilarity computes the cosine similarity between two embeddings.
+// Returns 0 if either embedding is nil, empty, or if lengths don't match.
+// Returns a value between -1 and 1, where 1 indicates identical direction.
+func cosineSimilarity(a, b agent.Embedding) float32 {
+	if len(a) == 0 || len(b) == 0 || len(a) != len(b) {
+		return 0
 	}
+
+	var dot, na, nb float32
+	for i := range a {
+		v1 := a[i]
+		v2 := b[i]
+		dot += v1 * v2
+		na += v1 * v1
+		nb += v2 * v2
+	}
+	if na == 0 || nb == 0 {
+		return 0
+	}
+
+	return dot / (float32(math.Sqrt(float64(na))) * float32(math.Sqrt(float64(nb))))
 }

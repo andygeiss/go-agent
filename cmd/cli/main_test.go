@@ -29,7 +29,8 @@ import (
 // - Full use case execution (SendMessage)
 // - Task service with various tool call patterns
 // - Message handling with trimming
-// - Real tool execution (calculate, time)
+// - Memory system with text search and embedding-based semantic search
+// - Cosine similarity computation at various embedding dimensions (128, 512, 1536)
 // - Parallel vs sequential tool execution
 // =============================================================================
 
@@ -597,6 +598,192 @@ func Benchmark_MemoryStore_Get_10000(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		_, _ = store.Get(ctx, "note-5000")
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Embedding Search Benchmarks - Semantic similarity search
+// -----------------------------------------------------------------------------
+
+// generateEmbedding creates a deterministic embedding vector for benchmarking.
+// Uses a simple pattern based on the seed to create varied but reproducible vectors.
+func generateEmbedding(seed int, dim int) agent.Embedding {
+	embedding := make(agent.Embedding, dim)
+	for i := range dim {
+		// Create varied but deterministic values between -1 and 1
+		embedding[i] = float32((seed+i)%1000)/500.0 - 1.0
+	}
+	return embedding
+}
+
+// generateNotesWithEmbeddings creates n memory notes with embeddings for benchmarking.
+func generateNotesWithEmbeddings(ctx context.Context, store *outbound.MemoryStore, n int, embeddingDim int) {
+	sourceTypes := []agent.SourceType{
+		agent.SourceTypeFact,
+		agent.SourceTypePlanStep,
+		agent.SourceTypePreference,
+		agent.SourceTypeSummary,
+		agent.SourceTypeToolResult,
+		agent.SourceTypeUserMessage,
+	}
+	tags := [][]string{
+		{"config", "important"},
+		{"preference", "user"},
+		{"task", "result"},
+		{"fact", "codebase"},
+		{"summary", "session"},
+	}
+	for i := range n {
+		noteID := agent.NoteID(fmt.Sprintf("note-%d", i))
+		sourceType := sourceTypes[i%len(sourceTypes)]
+		note := agent.NewMemoryNote(noteID, sourceType).
+			WithRawContent(fmt.Sprintf("This is the raw content for note number %d with some searchable text like apple, banana, cherry", i)).
+			WithSummary(fmt.Sprintf("Summary for note %d about various topics including programming and testing", i)).
+			WithContextDescription(fmt.Sprintf("Context: Note created during benchmark iteration %d", i)).
+			WithKeywords("benchmark", "test", fmt.Sprintf("keyword-%d", i%100)).
+			WithTags(tags[i%len(tags)]...).
+			WithImportance((i % 5) + 1).
+			WithUserID("bench-user").
+			WithSessionID("bench-session").
+			WithEmbedding(generateEmbedding(i, embeddingDim))
+		_ = store.Write(ctx, note)
+	}
+}
+
+// Benchmark_MemoryStore_SearchWithEmbedding_1000_Dim128 benchmarks embedding search with 1000 notes and 128-dim vectors.
+func Benchmark_MemoryStore_SearchWithEmbedding_1000_Dim128(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotesWithEmbeddings(ctx, store, 1000, 128)
+	queryEmbedding := generateEmbedding(42, 128)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.SearchWithEmbedding(ctx, "programming", queryEmbedding, 10, nil)
+	}
+}
+
+// Benchmark_MemoryStore_SearchWithEmbedding_1000_Dim512 benchmarks embedding search with 1000 notes and 512-dim vectors.
+func Benchmark_MemoryStore_SearchWithEmbedding_1000_Dim512(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotesWithEmbeddings(ctx, store, 1000, 512)
+	queryEmbedding := generateEmbedding(42, 512)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.SearchWithEmbedding(ctx, "programming", queryEmbedding, 10, nil)
+	}
+}
+
+// Benchmark_MemoryStore_SearchWithEmbedding_1000_Dim1536 benchmarks embedding search with 1000 notes and 1536-dim vectors (OpenAI ada-002).
+func Benchmark_MemoryStore_SearchWithEmbedding_1000_Dim1536(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotesWithEmbeddings(ctx, store, 1000, 1536)
+	queryEmbedding := generateEmbedding(42, 1536)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.SearchWithEmbedding(ctx, "programming", queryEmbedding, 10, nil)
+	}
+}
+
+// Benchmark_MemoryStore_SearchWithEmbedding_10000_Dim128 benchmarks embedding search with 10000 notes and 128-dim vectors.
+func Benchmark_MemoryStore_SearchWithEmbedding_10000_Dim128(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotesWithEmbeddings(ctx, store, 10000, 128)
+	queryEmbedding := generateEmbedding(42, 128)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.SearchWithEmbedding(ctx, "programming", queryEmbedding, 10, nil)
+	}
+}
+
+// Benchmark_MemoryStore_SearchWithEmbedding_10000_Dim512 benchmarks embedding search with 10000 notes and 512-dim vectors.
+func Benchmark_MemoryStore_SearchWithEmbedding_10000_Dim512(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotesWithEmbeddings(ctx, store, 10000, 512)
+	queryEmbedding := generateEmbedding(42, 512)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.SearchWithEmbedding(ctx, "programming", queryEmbedding, 10, nil)
+	}
+}
+
+// Benchmark_MemoryStore_SearchWithEmbedding_10000_Dim1536 benchmarks embedding search with 10000 notes and 1536-dim vectors (OpenAI ada-002).
+func Benchmark_MemoryStore_SearchWithEmbedding_10000_Dim1536(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotesWithEmbeddings(ctx, store, 10000, 1536)
+	queryEmbedding := generateEmbedding(42, 1536)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.SearchWithEmbedding(ctx, "programming", queryEmbedding, 10, nil)
+	}
+}
+
+// Benchmark_MemoryStore_SearchWithEmbedding_WithFilters_10000 benchmarks filtered embedding search on 10000 notes.
+func Benchmark_MemoryStore_SearchWithEmbedding_WithFilters_10000(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotesWithEmbeddings(ctx, store, 10000, 512)
+	queryEmbedding := generateEmbedding(42, 512)
+
+	opts := &agent.MemorySearchOptions{
+		UserID:    "bench-user",
+		SessionID: "bench-session",
+		Tags:      []string{"preference"},
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.SearchWithEmbedding(ctx, "programming", queryEmbedding, 10, opts)
+	}
+}
+
+// Benchmark_MemoryStore_SearchWithEmbedding_NilEmbedding_Fallback benchmarks fallback to importance sorting.
+func Benchmark_MemoryStore_SearchWithEmbedding_NilEmbedding_Fallback(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotesWithEmbeddings(ctx, store, 1000, 512)
+
+	b.ResetTimer()
+	for b.Loop() {
+		// nil embedding should fallback to importance-based sorting
+		_, _ = store.SearchWithEmbedding(ctx, "programming", nil, 10, nil)
+	}
+}
+
+// Benchmark_MemoryStore_SearchWithEmbedding_MixedEmbeddings benchmarks search where some notes lack embeddings.
+func Benchmark_MemoryStore_SearchWithEmbedding_MixedEmbeddings(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+
+	// Create a mix of notes with and without embeddings
+	for i := range 1000 {
+		noteID := agent.NoteID(fmt.Sprintf("note-%d", i))
+		note := agent.NewMemoryNote(noteID, agent.SourceTypeFact).
+			WithRawContent(fmt.Sprintf("Content %d with programming topics", i)).
+			WithSummary(fmt.Sprintf("Summary %d", i)).
+			WithImportance((i % 5) + 1)
+
+		// Only half the notes have embeddings
+		if i%2 == 0 {
+			note = note.WithEmbedding(generateEmbedding(i, 512))
+		}
+		_ = store.Write(ctx, note)
+	}
+	queryEmbedding := generateEmbedding(42, 512)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.SearchWithEmbedding(ctx, "programming", queryEmbedding, 10, nil)
 	}
 }
 

@@ -339,3 +339,219 @@ func Test_MemoryStore_Search_Should_CombineSourceTypeAndMinImportance(t *testing
 	assert.That(t, "result should be decision type", results[0].SourceType, agent.SourceTypeDecision)
 	assert.That(t, "result importance should be >= 3", results[0].Importance >= 3, true)
 }
+
+// -----------------------------------------------------------------------------
+// Embedding-based Search Tests
+// -----------------------------------------------------------------------------
+
+func Test_MemoryStore_SearchWithEmbedding_Should_PreferHigherSimilarity(t *testing.T) {
+	// Arrange
+	store := outbound.NewInMemoryMemoryStore()
+
+	// Create two notes with embeddings - note1 is more similar to query
+	queryEmbedding := agent.Embedding{1.0, 0.0, 0.0}
+	note1Embedding := agent.Embedding{0.9, 0.1, 0.0} // Very similar to query
+	note2Embedding := agent.Embedding{0.0, 1.0, 0.0} // Orthogonal to query
+
+	note1 := agent.NewMemoryNote("note-1", agent.SourceTypeFact).
+		WithRawContent("similar content").
+		WithEmbedding(note1Embedding).
+		WithImportance(1) // Lower importance but higher similarity
+	note2 := agent.NewMemoryNote("note-2", agent.SourceTypeFact).
+		WithRawContent("different content").
+		WithEmbedding(note2Embedding).
+		WithImportance(5) // Higher importance but lower similarity
+
+	_ = store.Write(context.Background(), note1)
+	_ = store.Write(context.Background(), note2)
+
+	// Act
+	results, err := store.SearchWithEmbedding(context.Background(), "content", queryEmbedding, 10, nil)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should find 2 results", len(results), 2)
+	assert.That(t, "first result must be note-1 (higher similarity)", results[0].ID, agent.NoteID("note-1"))
+	assert.That(t, "second result must be note-2 (lower similarity)", results[1].ID, agent.NoteID("note-2"))
+}
+
+func Test_MemoryStore_SearchWithEmbedding_WithNilEmbedding_Should_FallbackToImportance(t *testing.T) {
+	// Arrange
+	store := outbound.NewInMemoryMemoryStore()
+
+	note1 := agent.NewMemoryNote("note-1", agent.SourceTypeFact).
+		WithRawContent("content").
+		WithImportance(2)
+	note2 := agent.NewMemoryNote("note-2", agent.SourceTypeFact).
+		WithRawContent("content").
+		WithImportance(5)
+
+	_ = store.Write(context.Background(), note1)
+	_ = store.Write(context.Background(), note2)
+
+	// Act - nil embedding should use importance-based sorting
+	results, err := store.SearchWithEmbedding(context.Background(), "content", nil, 10, nil)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should find 2 results", len(results), 2)
+	assert.That(t, "first result must have higher importance", results[0].Importance, 5)
+	assert.That(t, "second result must have lower importance", results[1].Importance, 2)
+}
+
+func Test_MemoryStore_SearchWithEmbedding_WithNotesWithoutEmbedding_Should_ScoreZero(t *testing.T) {
+	// Arrange
+	store := outbound.NewInMemoryMemoryStore()
+
+	queryEmbedding := agent.Embedding{1.0, 0.0, 0.0}
+	noteWithEmbedding := agent.Embedding{0.9, 0.1, 0.0}
+
+	note1 := agent.NewMemoryNote("note-1", agent.SourceTypeFact).
+		WithRawContent("content with embedding").
+		WithEmbedding(noteWithEmbedding)
+	note2 := agent.NewMemoryNote("note-2", agent.SourceTypeFact).
+		WithRawContent("content without embedding")
+	// note2 has no embedding
+
+	_ = store.Write(context.Background(), note1)
+	_ = store.Write(context.Background(), note2)
+
+	// Act
+	results, err := store.SearchWithEmbedding(context.Background(), "content", queryEmbedding, 10, nil)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should find 2 results", len(results), 2)
+	// Note with embedding should rank higher due to positive similarity score
+	assert.That(t, "first result must be note with embedding", results[0].ID, agent.NoteID("note-1"))
+}
+
+func Test_MemoryStore_SearchWithEmbedding_Should_RespectFilters(t *testing.T) {
+	// Arrange
+	store := outbound.NewInMemoryMemoryStore()
+
+	queryEmbedding := agent.Embedding{1.0, 0.0, 0.0}
+	embedding := agent.Embedding{0.9, 0.1, 0.0}
+
+	note1 := agent.NewMemoryNote("note-1", agent.SourceTypeDecision).
+		WithRawContent("decision content").
+		WithEmbedding(embedding)
+	note2 := agent.NewMemoryNote("note-2", agent.SourceTypeFact).
+		WithRawContent("fact content").
+		WithEmbedding(embedding)
+
+	_ = store.Write(context.Background(), note1)
+	_ = store.Write(context.Background(), note2)
+
+	// Act - filter by source type
+	opts := &agent.MemorySearchOptions{SourceTypes: []agent.SourceType{agent.SourceTypeDecision}}
+	results, err := store.SearchWithEmbedding(context.Background(), "content", queryEmbedding, 10, opts)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should find 1 result (filtered by source type)", len(results), 1)
+	assert.That(t, "result must be decision type", results[0].SourceType, agent.SourceTypeDecision)
+}
+
+func Test_MemoryStore_SearchWithEmbedding_Should_RespectLimit(t *testing.T) {
+	// Arrange
+	store := outbound.NewInMemoryMemoryStore()
+
+	queryEmbedding := agent.Embedding{1.0, 0.0, 0.0}
+
+	for i := range 5 {
+		embedding := agent.Embedding{float32(5-i) / 5.0, float32(i) / 5.0, 0.0}
+		note := agent.NewMemoryNote(agent.NoteID(string(rune('a'+i))), agent.SourceTypeFact).
+			WithRawContent("content").
+			WithEmbedding(embedding)
+		_ = store.Write(context.Background(), note)
+	}
+
+	// Act
+	results, err := store.SearchWithEmbedding(context.Background(), "content", queryEmbedding, 2, nil)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should respect limit", len(results), 2)
+}
+
+func Test_MemoryStore_SearchWithEmbedding_With_IdenticalEmbeddings_Should_ReturnAllMatches(t *testing.T) {
+	// Arrange
+	store := outbound.NewInMemoryMemoryStore()
+
+	queryEmbedding := agent.Embedding{1.0, 0.0, 0.0}
+	sameEmbedding := agent.Embedding{1.0, 0.0, 0.0}
+
+	note1 := agent.NewMemoryNote("note-1", agent.SourceTypeFact).
+		WithRawContent("content").
+		WithEmbedding(sameEmbedding)
+	note2 := agent.NewMemoryNote("note-2", agent.SourceTypeFact).
+		WithRawContent("content").
+		WithEmbedding(sameEmbedding)
+
+	_ = store.Write(context.Background(), note1)
+	_ = store.Write(context.Background(), note2)
+
+	// Act
+	results, err := store.SearchWithEmbedding(context.Background(), "content", queryEmbedding, 10, nil)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should find both notes with identical embeddings", len(results), 2)
+}
+
+func Test_MemoryStore_SearchWithEmbedding_With_OppositeVectors_Should_RankLast(t *testing.T) {
+	// Arrange
+	store := outbound.NewInMemoryMemoryStore()
+
+	queryEmbedding := agent.Embedding{1.0, 0.0, 0.0}
+	similarEmbedding := agent.Embedding{0.9, 0.1, 0.0}
+	oppositeEmbedding := agent.Embedding{-1.0, 0.0, 0.0}
+
+	note1 := agent.NewMemoryNote("similar", agent.SourceTypeFact).
+		WithRawContent("content").
+		WithEmbedding(similarEmbedding)
+	note2 := agent.NewMemoryNote("opposite", agent.SourceTypeFact).
+		WithRawContent("content").
+		WithEmbedding(oppositeEmbedding)
+
+	_ = store.Write(context.Background(), note1)
+	_ = store.Write(context.Background(), note2)
+
+	// Act
+	results, err := store.SearchWithEmbedding(context.Background(), "content", queryEmbedding, 10, nil)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should find 2 results", len(results), 2)
+	assert.That(t, "similar note should rank first", results[0].ID, agent.NoteID("similar"))
+	assert.That(t, "opposite note should rank last", results[1].ID, agent.NoteID("opposite"))
+}
+
+func Test_MemoryStore_SearchWithEmbedding_With_MismatchedLengths_Should_TreatAsZeroScore(t *testing.T) {
+	// Arrange
+	store := outbound.NewInMemoryMemoryStore()
+
+	queryEmbedding := agent.Embedding{1.0, 0.0, 0.0}
+	matchingEmbedding := agent.Embedding{0.9, 0.1, 0.0}
+	mismatchedEmbedding := agent.Embedding{1.0, 0.0} // Different length
+
+	note1 := agent.NewMemoryNote("matching", agent.SourceTypeFact).
+		WithRawContent("content").
+		WithEmbedding(matchingEmbedding)
+	note2 := agent.NewMemoryNote("mismatched", agent.SourceTypeFact).
+		WithRawContent("content").
+		WithEmbedding(mismatchedEmbedding)
+
+	_ = store.Write(context.Background(), note1)
+	_ = store.Write(context.Background(), note2)
+
+	// Act
+	results, err := store.SearchWithEmbedding(context.Background(), "content", queryEmbedding, 10, nil)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should find 2 results", len(results), 2)
+	// Note with matching embedding should rank higher due to positive similarity score
+	assert.That(t, "matching note should rank first", results[0].ID, agent.NoteID("matching"))
+}

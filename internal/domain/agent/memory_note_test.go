@@ -118,6 +118,32 @@ func Test_MemoryNote_WithTags_Should_SetTags(t *testing.T) {
 	assert.That(t, "first tag must match", note.Tags[0], "preference")
 }
 
+func Test_MemoryNote_WithEmbedding_Should_SetEmbedding(t *testing.T) {
+	// Arrange
+	note := agent.NewMemoryNote("note-123", agent.SourceTypePreference)
+	embedding := agent.Embedding{0.1, 0.2, 0.3, 0.4}
+
+	// Act
+	note.WithEmbedding(embedding)
+
+	// Assert
+	assert.That(t, "embedding length must be 4", len(note.Embedding), 4)
+	assert.That(t, "first element must match", note.Embedding[0], float32(0.1))
+	assert.That(t, "last element must match", note.Embedding[3], float32(0.4))
+}
+
+func Test_MemoryNote_WithEmbedding_Should_UpdateTimestamp(t *testing.T) {
+	// Arrange
+	note := agent.NewMemoryNote("note-123", agent.SourceTypePreference)
+	initialTime := note.UpdatedAt
+
+	// Act
+	note.WithEmbedding(agent.Embedding{1.0, 2.0})
+
+	// Assert
+	assert.That(t, "updated_at must be >= initial time", note.UpdatedAt.After(initialTime) || note.UpdatedAt.Equal(initialTime), true)
+}
+
 func Test_MemoryNote_WithImportance_Should_ClampToValidRange(t *testing.T) {
 	// Arrange
 	note1 := agent.NewMemoryNote("note-1", agent.SourceTypePreference)
