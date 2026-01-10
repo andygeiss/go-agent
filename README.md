@@ -363,9 +363,33 @@ go test ./...
 # Run with coverage
 go test -cover ./...
 
-# Run benchmarks
-go test -bench=. ./internal/domain/agent/
+# Run all benchmarks (PGO profiling)
+go test -bench=. ./cmd/cli/...
+
+# Run specific benchmark categories
+go test -bench=Memory ./cmd/cli/...           # Memory system benchmarks
+go test -bench=FullStack ./cmd/cli/...        # End-to-end benchmarks
+go test -bench=TaskService ./cmd/cli/...      # Task service benchmarks
+
+# Run benchmarks with custom time
+go test -bench=. -benchtime=1s ./cmd/cli/...
 ```
+
+### Benchmark Categories
+
+The CLI benchmarks (`cmd/cli/main_test.go`) cover all domain contexts:
+
+| Category | Description |
+|----------|-------------|
+| `Benchmark_FullStack_*` | End-to-end agent with tools |
+| `Benchmark_MemoryNote_*` | MemoryNote object creation/methods |
+| `Benchmark_MemoryStore_*` | Raw store ops at 100/1000/10000 notes |
+| `Benchmark_MemoryTools_*` | Tool-based memory operations |
+| `Benchmark_MemorizingService_*` | Complete memory workflow |
+| `Benchmark_*NoteUseCase` | Domain use case benchmarks |
+| `Benchmark_RealToolExecutor_*` | calculate, time tools |
+| `Benchmark_SendMessageUseCase_*` | Chat use case execution |
+| `Benchmark_TaskService_*` | Task service with hooks/parallelism |
 
 ---
 

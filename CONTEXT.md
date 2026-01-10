@@ -200,12 +200,24 @@ go-agent/
 - Test files: `*_test.go` in same package
 - Unit tests: Test single functions/methods in isolation
 - Table-driven tests: Use `tests := []struct{...}` pattern
-- Benchmarks: `Benchmark*` functions in `*_test.go`
+- Benchmarks: `Benchmark*` functions in `*_test.go` (see `cmd/cli/main_test.go` for PGO benchmarks)
+
+**Benchmark categories** (in `cmd/cli/main_test.go`):
+- **Full Stack Benchmarks** — End-to-end use case execution with mock LLM
+- **Memory Store Benchmarks** — Raw adapter layer operations at 100, 1000, 10000 notes
+- **Memory Tools Benchmarks** — Tool-based memory operations with JSON parsing
+- **Memory Use Case Benchmarks** — Domain layer use cases (Write, Search, Get, Delete)
+- **MemoryNote Object Benchmarks** — Object creation and method performance
+- **Message Handling Benchmarks** — Message creation and trimming
+- **Task Service Benchmarks** — Task execution with various tool patterns
+- **Tool Execution Benchmarks** — Real tool execution (calculate, time)
 
 **Patterns:**
 - Create test helpers in `shared_test.go`
 - Use in-memory implementations for testing adapters
 - Test error conditions explicitly
+- Use `b.Loop()` for benchmarks (Go 1.24+)
+- Pre-populate stores before benchmarks with `b.ResetTimer()`
 
 ### 5.5 Formatting & linting
 
@@ -390,8 +402,11 @@ go test ./...
 # Run tests with coverage
 go test -cover ./...
 
-# Run benchmarks
-go test -bench=. ./internal/domain/agent/
+# Run all benchmarks (for PGO profiling)
+go test -bench=. ./cmd/cli/...
+
+# Run memory benchmarks only
+go test -bench=Memory ./cmd/cli/...
 
 # Format code
 go fmt ./...

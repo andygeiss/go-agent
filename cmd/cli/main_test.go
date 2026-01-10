@@ -9,6 +9,7 @@ import (
 	"github.com/andygeiss/go-agent/internal/adapters/outbound"
 	"github.com/andygeiss/go-agent/internal/domain/agent"
 	"github.com/andygeiss/go-agent/internal/domain/chatting"
+	"github.com/andygeiss/go-agent/internal/domain/memorizing"
 	"github.com/andygeiss/go-agent/internal/domain/tooling"
 )
 
@@ -30,6 +31,8 @@ import (
 // -----------------------------------------------------------------------------
 // Mock implementations for benchmarking
 // -----------------------------------------------------------------------------
+
+const unusedIDGenerator = "unused"
 
 // mockLLMClient implements agent.LLMClient for benchmarking.
 type mockLLMClient struct {
@@ -501,5 +504,559 @@ func Benchmark_NewToolDefinition(b *testing.B) {
 	for b.Loop() {
 		_ = agent.NewToolDefinition("calculate", "Perform arithmetic calculation").
 			WithParameter("expression", "The arithmetic expression to evaluate")
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Memory System Benchmarks - memorizing context
+// -----------------------------------------------------------------------------
+
+// generateNotes creates n memory notes with varied content for benchmarking.
+func generateNotes(ctx context.Context, store agent.MemoryStore, n int) {
+	sourceTypes := []agent.SourceType{
+		agent.SourceTypeFact,
+		agent.SourceTypePlanStep,
+		agent.SourceTypePreference,
+		agent.SourceTypeSummary,
+		agent.SourceTypeToolResult,
+		agent.SourceTypeUserMessage,
+	}
+	tags := [][]string{
+		{"config", "important"},
+		{"preference", "user"},
+		{"task", "result"},
+		{"fact", "codebase"},
+		{"summary", "session"},
+	}
+	for i := range n {
+		noteID := agent.NoteID(fmt.Sprintf("note-%d", i))
+		sourceType := sourceTypes[i%len(sourceTypes)]
+		note := agent.NewMemoryNote(noteID, sourceType).
+			WithRawContent(fmt.Sprintf("This is the raw content for note number %d with some searchable text like apple, banana, cherry", i)).
+			WithSummary(fmt.Sprintf("Summary for note %d about various topics including programming and testing", i)).
+			WithContextDescription(fmt.Sprintf("Context: Note created during benchmark iteration %d", i)).
+			WithKeywords("benchmark", "test", fmt.Sprintf("keyword-%d", i%100)).
+			WithTags(tags[i%len(tags)]...).
+			WithImportance((i % 5) + 1).
+			WithUserID("bench-user").
+			WithSessionID("bench-session")
+		_ = store.Write(ctx, note)
+	}
+}
+
+// Benchmark_MemoryStore_Write_100 benchmarks writing 100 notes.
+func Benchmark_MemoryStore_Write_100(b *testing.B) {
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for b.Loop() {
+		store := outbound.NewInMemoryMemoryStore()
+		for i := range 100 {
+			noteID := agent.NoteID(fmt.Sprintf("note-%d", i))
+			note := agent.NewMemoryNote(noteID, agent.SourceTypeFact).
+				WithRawContent(fmt.Sprintf("Content for note %d", i)).
+				WithSummary(fmt.Sprintf("Summary %d", i)).
+				WithImportance(3)
+			_ = store.Write(ctx, note)
+		}
+	}
+}
+
+// Benchmark_MemoryStore_Write_1000 benchmarks writing 1000 notes.
+func Benchmark_MemoryStore_Write_1000(b *testing.B) {
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for b.Loop() {
+		store := outbound.NewInMemoryMemoryStore()
+		for i := range 1000 {
+			noteID := agent.NoteID(fmt.Sprintf("note-%d", i))
+			note := agent.NewMemoryNote(noteID, agent.SourceTypeFact).
+				WithRawContent(fmt.Sprintf("Content for note %d", i)).
+				WithSummary(fmt.Sprintf("Summary %d", i)).
+				WithImportance(3)
+			_ = store.Write(ctx, note)
+		}
+	}
+}
+
+// Benchmark_MemoryStore_Search_100 benchmarks searching 100 notes.
+func Benchmark_MemoryStore_Search_100(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotes(ctx, store, 100)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.Search(ctx, "programming", 10, nil)
+	}
+}
+
+// Benchmark_MemoryStore_Search_1000 benchmarks searching 1000 notes.
+func Benchmark_MemoryStore_Search_1000(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotes(ctx, store, 1000)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.Search(ctx, "programming", 10, nil)
+	}
+}
+
+// Benchmark_MemoryStore_Search_10000 benchmarks searching 10000 notes.
+func Benchmark_MemoryStore_Search_10000(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotes(ctx, store, 10000)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.Search(ctx, "programming", 10, nil)
+	}
+}
+
+// Benchmark_MemoryStore_Search_WithFilters_1000 benchmarks filtered search on 1000 notes.
+func Benchmark_MemoryStore_Search_WithFilters_1000(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotes(ctx, store, 1000)
+
+	opts := &agent.MemorySearchOptions{
+		UserID:    "bench-user",
+		SessionID: "bench-session",
+		Tags:      []string{"preference"},
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.Search(ctx, "programming", 10, opts)
+	}
+}
+
+// Benchmark_MemoryStore_Search_WithFilters_10000 benchmarks filtered search on 10000 notes.
+func Benchmark_MemoryStore_Search_WithFilters_10000(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotes(ctx, store, 10000)
+
+	opts := &agent.MemorySearchOptions{
+		UserID:    "bench-user",
+		SessionID: "bench-session",
+		Tags:      []string{"preference"},
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.Search(ctx, "programming", 10, opts)
+	}
+}
+
+// Benchmark_MemoryStore_Get_1000 benchmarks getting a note from 1000 notes.
+func Benchmark_MemoryStore_Get_1000(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotes(ctx, store, 1000)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.Get(ctx, "note-500")
+	}
+}
+
+// Benchmark_MemoryStore_Get_10000 benchmarks getting a note from 10000 notes.
+func Benchmark_MemoryStore_Get_10000(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotes(ctx, store, 10000)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.Get(ctx, "note-5000")
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Memorizing Use Case Benchmarks
+// -----------------------------------------------------------------------------
+
+// Benchmark_WriteNoteUseCase benchmarks the WriteNote use case.
+func Benchmark_WriteNoteUseCase(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	useCase := memorizing.NewWriteNoteUseCase(store)
+
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		noteID := agent.NoteID(fmt.Sprintf("note-%d", i))
+		note := agent.NewMemoryNote(noteID, agent.SourceTypePreference).
+			WithRawContent("User prefers dark mode").
+			WithSummary("Dark mode preference").
+			WithImportance(4)
+		_ = useCase.Execute(ctx, note)
+	}
+}
+
+// Benchmark_SearchNotesUseCase_1000 benchmarks the SearchNotes use case with 1000 notes.
+func Benchmark_SearchNotesUseCase_1000(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotes(ctx, store, 1000)
+	useCase := memorizing.NewSearchNotesUseCase(store)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = useCase.Execute(ctx, "apple banana", 10, nil)
+	}
+}
+
+// Benchmark_SearchNotesUseCase_10000 benchmarks the SearchNotes use case with 10000 notes.
+func Benchmark_SearchNotesUseCase_10000(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotes(ctx, store, 10000)
+	useCase := memorizing.NewSearchNotesUseCase(store)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = useCase.Execute(ctx, "apple banana", 10, nil)
+	}
+}
+
+// Benchmark_GetNoteUseCase benchmarks the GetNote use case.
+func Benchmark_GetNoteUseCase(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotes(ctx, store, 1000)
+	useCase := memorizing.NewGetNoteUseCase(store)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = useCase.Execute(ctx, "note-500")
+	}
+}
+
+// Benchmark_DeleteNoteUseCase benchmarks the DeleteNote use case.
+func Benchmark_DeleteNoteUseCase(b *testing.B) {
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		store := outbound.NewInMemoryMemoryStore()
+		// Write a note first
+		noteID := agent.NoteID(fmt.Sprintf("note-%d", i))
+		note := agent.NewMemoryNote(noteID, agent.SourceTypeFact).
+			WithRawContent("Temporary note").
+			WithSummary("To be deleted")
+		_ = store.Write(ctx, note)
+
+		// Delete it
+		useCase := memorizing.NewDeleteNoteUseCase(store)
+		_ = useCase.Execute(ctx, noteID)
+	}
+}
+
+// Benchmark_MemorizingService_FullWorkflow benchmarks a complete memory workflow.
+func Benchmark_MemorizingService_FullWorkflow(b *testing.B) {
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		store := outbound.NewInMemoryMemoryStore()
+		svc := memorizing.NewService(store)
+
+		// Write some notes
+		for j := range 10 {
+			noteID := agent.NoteID(fmt.Sprintf("note-%d-%d", i, j))
+			note := agent.NewMemoryNote(noteID, agent.SourceTypeFact).
+				WithRawContent(fmt.Sprintf("Content %d", j)).
+				WithSummary(fmt.Sprintf("Summary %d", j)).
+				WithKeywords("workflow", "test").
+				WithImportance(3)
+			_ = svc.WriteNote(ctx, note)
+		}
+
+		// Search notes
+		_, _ = svc.SearchNotes(ctx, "Content", 5, nil)
+
+		// Get a specific note
+		_, _ = svc.GetNote(ctx, agent.NoteID(fmt.Sprintf("note-%d-5", i)))
+
+		// Delete a note
+		_ = svc.DeleteNote(ctx, agent.NoteID(fmt.Sprintf("note-%d-0", i)))
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Memory Tool Benchmarks
+// -----------------------------------------------------------------------------
+
+// Benchmark_MemoryTools_Write benchmarks the memory_write tool.
+func Benchmark_MemoryTools_Write(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	idCounter := 0
+	idGen := func() string {
+		idCounter++
+		return fmt.Sprintf("note-%d", idCounter)
+	}
+	svc := tooling.NewMemoryToolService(store, idGen)
+
+	b.ResetTimer()
+	for b.Loop() {
+		args := `{"source_type": "preference", "raw_content": "User prefers Go", "summary": "Go preference", "importance": 4}`
+		_, _ = svc.MemoryWrite(ctx, args)
+	}
+}
+
+// Benchmark_MemoryTools_Search_1000 benchmarks the memory_search tool with 1000 notes.
+func Benchmark_MemoryTools_Search_1000(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotes(ctx, store, 1000)
+	idGen := func() string { return unusedIDGenerator }
+	svc := tooling.NewMemoryToolService(store, idGen)
+
+	b.ResetTimer()
+	for b.Loop() {
+		args := `{"query": "programming", "limit": 10}`
+		_, _ = svc.MemorySearch(ctx, args)
+	}
+}
+
+// Benchmark_MemoryTools_Search_10000 benchmarks the memory_search tool with 10000 notes.
+func Benchmark_MemoryTools_Search_10000(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotes(ctx, store, 10000)
+	idGen := func() string { return unusedIDGenerator }
+	svc := tooling.NewMemoryToolService(store, idGen)
+
+	b.ResetTimer()
+	for b.Loop() {
+		args := `{"query": "programming", "limit": 10}`
+		_, _ = svc.MemorySearch(ctx, args)
+	}
+}
+
+// Benchmark_MemoryTools_Get benchmarks the memory_get tool.
+func Benchmark_MemoryTools_Get(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotes(ctx, store, 1000)
+	idGen := func() string { return unusedIDGenerator }
+	svc := tooling.NewMemoryToolService(store, idGen)
+
+	b.ResetTimer()
+	for b.Loop() {
+		args := `{"id": "note-500"}`
+		_, _ = svc.MemoryGet(ctx, args)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Full Stack Memory Benchmarks
+// -----------------------------------------------------------------------------
+
+// Benchmark_FullStack_WithMemoryTools benchmarks full agent with memory tools.
+func Benchmark_FullStack_WithMemoryTools(b *testing.B) {
+	ctx := context.Background()
+
+	// Setup memory store with some existing notes
+	store := outbound.NewInMemoryMemoryStore()
+	generateNotes(ctx, store, 100)
+
+	idCounter := 100
+	idGen := func() string {
+		idCounter++
+		return fmt.Sprintf("note-%d", idCounter)
+	}
+	memoryToolSvc := tooling.NewMemoryToolService(store, idGen)
+
+	// Create tool executor with memory tools
+	toolExecutor := outbound.NewToolExecutor()
+
+	memoryGetTool := tooling.NewMemoryGetTool(memoryToolSvc)
+	toolExecutor.RegisterTool(string(memoryGetTool.ID), memoryGetTool.Func)
+	toolExecutor.RegisterToolDefinition(memoryGetTool.Definition)
+
+	memorySearchTool := tooling.NewMemorySearchTool(memoryToolSvc)
+	toolExecutor.RegisterTool(string(memorySearchTool.ID), memorySearchTool.Func)
+	toolExecutor.RegisterToolDefinition(memorySearchTool.Definition)
+
+	memoryWriteTool := tooling.NewMemoryWriteTool(memoryToolSvc)
+	toolExecutor.RegisterTool(string(memoryWriteTool.ID), memoryWriteTool.Func)
+	toolExecutor.RegisterToolDefinition(memoryWriteTool.Definition)
+
+	// Mock LLM that uses memory tools
+	callCount := 0
+	llmClient := &mockLLMClient{
+		responseFn: func(_ []agent.Message) agent.LLMResponse {
+			callCount++
+			if callCount%2 == 1 {
+				return agent.NewLLMResponse(
+					agent.NewMessage(agent.RoleAssistant, ""),
+					"tool_calls",
+				).WithToolCalls([]agent.ToolCall{
+					agent.NewToolCall("tc-1", "memory_search", `{"query": "programming", "limit": 5}`),
+				})
+			}
+			return agent.NewLLMResponse(
+				agent.NewMessage(agent.RoleAssistant, "I found relevant memories about programming."),
+				"stop",
+			)
+		},
+	}
+
+	publisher := &mockEventPublisher{}
+	taskService := agent.NewTaskService(llmClient, toolExecutor, publisher)
+	input := chatting.SendMessageInput{Message: "What do you remember about programming?"}
+
+	b.ResetTimer()
+	for b.Loop() {
+		callCount = 0
+		ag := agent.NewAgent("bench-agent", "You are a helpful assistant with memory",
+			agent.WithMaxIterations(10),
+			agent.WithMaxMessages(100),
+		)
+		useCase := chatting.NewSendMessageUseCase(taskService, &ag)
+		_, _ = useCase.Execute(ctx, input)
+	}
+}
+
+// Benchmark_FullStack_MemoryWriteAndSearch benchmarks write then search pattern.
+func Benchmark_FullStack_MemoryWriteAndSearch(b *testing.B) {
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		benchmarkWriteAndSearchIteration(ctx, i)
+	}
+}
+
+// benchmarkWriteAndSearchIteration runs a single iteration of the write-and-search benchmark.
+func benchmarkWriteAndSearchIteration(ctx context.Context, iteration int) {
+	store := outbound.NewInMemoryMemoryStore()
+
+	idCounter := 0
+	idGen := func() string {
+		idCounter++
+		return fmt.Sprintf("note-%d-%d", iteration, idCounter)
+	}
+	memoryToolSvc := tooling.NewMemoryToolService(store, idGen)
+
+	toolExecutor := outbound.NewToolExecutor()
+	memorySearchTool := tooling.NewMemorySearchTool(memoryToolSvc)
+	toolExecutor.RegisterTool(string(memorySearchTool.ID), memorySearchTool.Func)
+	toolExecutor.RegisterToolDefinition(memorySearchTool.Definition)
+	memoryWriteTool := tooling.NewMemoryWriteTool(memoryToolSvc)
+	toolExecutor.RegisterTool(string(memoryWriteTool.ID), memoryWriteTool.Func)
+	toolExecutor.RegisterToolDefinition(memoryWriteTool.Definition)
+
+	callCount := 0
+	llmClient := &mockLLMClient{
+		responseFn: func(_ []agent.Message) agent.LLMResponse {
+			callCount++
+			return buildWriteSearchResponse(callCount)
+		},
+	}
+
+	publisher := &mockEventPublisher{}
+	taskService := agent.NewTaskService(llmClient, toolExecutor, publisher)
+	ag := agent.NewAgent("bench-agent", "You are a helpful assistant",
+		agent.WithMaxIterations(15),
+		agent.WithMaxMessages(100),
+	)
+	useCase := chatting.NewSendMessageUseCase(taskService, &ag)
+	_, _ = useCase.Execute(ctx, chatting.SendMessageInput{Message: "Remember these facts and search"})
+}
+
+// buildWriteSearchResponse builds the appropriate LLM response for write-search benchmark.
+func buildWriteSearchResponse(callCount int) agent.LLMResponse {
+	if callCount <= 10 {
+		return agent.NewLLMResponse(
+			agent.NewMessage(agent.RoleAssistant, ""),
+			"tool_calls",
+		).WithToolCalls([]agent.ToolCall{
+			agent.NewToolCall(
+				agent.ToolCallID(fmt.Sprintf("tc-%d", callCount)),
+				"memory_write",
+				fmt.Sprintf(`{"source_type": "fact", "raw_content": "Fact %d about Go programming", "summary": "Go fact %d", "importance": 3}`, callCount, callCount),
+			),
+		})
+	}
+	if callCount == 11 {
+		return agent.NewLLMResponse(
+			agent.NewMessage(agent.RoleAssistant, ""),
+			"tool_calls",
+		).WithToolCalls([]agent.ToolCall{
+			agent.NewToolCall("tc-search", "memory_search", `{"query": "Go programming", "limit": 5}`),
+		})
+	}
+	return agent.NewLLMResponse(
+		agent.NewMessage(agent.RoleAssistant, "I've stored and retrieved the facts."),
+		"stop",
+	)
+}
+
+// -----------------------------------------------------------------------------
+// MemoryNote Object Benchmarks
+// -----------------------------------------------------------------------------
+
+// Benchmark_NewMemoryNote benchmarks memory note creation.
+func Benchmark_NewMemoryNote(b *testing.B) {
+	for b.Loop() {
+		_ = agent.NewMemoryNote("note-1", agent.SourceTypeFact)
+	}
+}
+
+// Benchmark_MemoryNote_WithBuilders benchmarks memory note with all builders.
+func Benchmark_MemoryNote_WithBuilders(b *testing.B) {
+	for b.Loop() {
+		_ = agent.NewMemoryNote("note-1", agent.SourceTypePreference).
+			WithRawContent("User prefers dark mode for better readability").
+			WithSummary("Dark mode preference").
+			WithContextDescription("User expressed preference during UI customization").
+			WithKeywords("dark", "mode", "theme", "preference", "ui").
+			WithTags("preference", "ui", "config").
+			WithImportance(4).
+			WithUserID("user-123").
+			WithSessionID("session-456").
+			WithTaskID("task-789")
+	}
+}
+
+// Benchmark_MemoryNote_SearchableText benchmarks searchable text generation.
+func Benchmark_MemoryNote_SearchableText(b *testing.B) {
+	note := agent.NewMemoryNote("note-1", agent.SourceTypeFact).
+		WithRawContent("This is the raw content of the note").
+		WithSummary("This is the summary").
+		WithContextDescription("This is the context description")
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = note.SearchableText()
+	}
+}
+
+// Benchmark_MemoryNote_HasTag benchmarks tag checking.
+func Benchmark_MemoryNote_HasTag(b *testing.B) {
+	note := agent.NewMemoryNote("note-1", agent.SourceTypeFact).
+		WithTags("preference", "ui", "config", "important", "user")
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = note.HasTag("config")
+	}
+}
+
+// Benchmark_MemoryNote_HasKeyword benchmarks keyword checking.
+func Benchmark_MemoryNote_HasKeyword(b *testing.B) {
+	note := agent.NewMemoryNote("note-1", agent.SourceTypeFact).
+		WithKeywords("dark", "mode", "theme", "preference", "ui", "customization")
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = note.HasKeyword("preference")
 	}
 }
