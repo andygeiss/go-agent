@@ -305,6 +305,7 @@ func (n *MemoryNote) HasKeyword(keyword string) bool {
 
 // SearchableText returns the combined text used for semantic search.
 // This is typically used to generate embeddings.
+// Includes raw content, summary, context description, tags, and keywords.
 func (n *MemoryNote) SearchableText() string {
 	text := n.RawContent
 	if n.Summary != "" {
@@ -312,6 +313,12 @@ func (n *MemoryNote) SearchableText() string {
 	}
 	if n.ContextDescription != "" {
 		text = text + " " + n.ContextDescription
+	}
+	if len(n.Tags) > 0 {
+		text = text + " " + strings.Join(n.Tags, " ")
+	}
+	if len(n.Keywords) > 0 {
+		text = text + " " + strings.Join(n.Keywords, " ")
 	}
 	return text
 }

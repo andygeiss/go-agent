@@ -58,7 +58,8 @@ func (m *mockIndexStore) GetSnapshot(_ context.Context, id indexing.SnapshotID) 
 	return indexing.Snapshot{}, indexing.ErrSnapshotNotFound
 }
 
-func TestService_Scan(t *testing.T) {
+func Test_Service_Scan_Should_ReturnSnapshotWithFiles(t *testing.T) {
+	// Arrange
 	now := time.Now()
 	files := []indexing.FileInfo{
 		indexing.NewFileInfo("/path/to/file1.go", now, 100),
@@ -75,14 +76,17 @@ func TestService_Scan(t *testing.T) {
 
 	svc := indexing.NewService(walker, store, idGen)
 
+	// Act
 	snapshot, err := svc.Scan(context.Background(), []string{"/path"}, nil)
 
+	// Assert
 	assert.That(t, "error must be nil", err == nil, true)
 	assert.That(t, "file count must be 2", snapshot.FileCount(), 2)
 	assert.That(t, "snapshot ID must match", string(snapshot.ID), "snap-1")
 }
 
-func TestService_ChangedSince(t *testing.T) {
+func Test_Service_ChangedSince_Should_ReturnFilesModifiedAfterTime(t *testing.T) {
+	// Arrange
 	baseTime := time.Now().Add(-2 * time.Hour)
 	files := []indexing.FileInfo{
 		indexing.NewFileInfo("/path/to/old.go", baseTime.Add(-1*time.Hour), 100),    // 3 hours ago
@@ -97,15 +101,17 @@ func TestService_ChangedSince(t *testing.T) {
 	walker := &mockFileWalker{}
 	svc := indexing.NewService(walker, store, func() string { return "id" })
 
-	// Get files changed in the last 2 hours
+	// Act
 	sinceTime := baseTime
 	changed, err := svc.ChangedSince(context.Background(), sinceTime)
 
+	// Assert
 	assert.That(t, "error must be nil", err == nil, true)
 	assert.That(t, "changed count must be 2", len(changed), 2)
 }
 
-func TestService_DiffSnapshots(t *testing.T) {
+func Test_Service_DiffSnapshots_Should_ReturnAddedChangedRemoved(t *testing.T) {
+	// Arrange
 	now := time.Now()
 
 	fromFiles := []indexing.FileInfo{
@@ -129,20 +135,21 @@ func TestService_DiffSnapshots(t *testing.T) {
 	walker := &mockFileWalker{}
 	svc := indexing.NewService(walker, store, func() string { return "id" })
 
+	// Act
 	diff, err := svc.DiffSnapshots(context.Background(), "snap-from", "snap-to")
 
+	// Assert
 	assert.That(t, "error must be nil", err == nil, true)
 	assert.That(t, "added count must be 1", len(diff.Added), 1)
 	assert.That(t, "changed count must be 1", len(diff.Changed), 1)
 	assert.That(t, "removed count must be 1", len(diff.Removed), 1)
-
-	// Verify the correct files
 	assert.That(t, "added path must match", diff.Added[0].Path, "/path/to/added.go")
 	assert.That(t, "changed path must match", diff.Changed[0].Path, "/path/to/changed.go")
 	assert.That(t, "removed path must match", diff.Removed[0].Path, "/path/to/removed.go")
 }
 
-func TestService_DiffSnapshots_BySize(t *testing.T) {
+func Test_Service_DiffSnapshots_With_SizeChange_Should_DetectChange(t *testing.T) {
+	// Arrange
 	now := time.Now()
 
 	fromFiles := []indexing.FileInfo{
@@ -160,18 +167,23 @@ func TestService_DiffSnapshots_BySize(t *testing.T) {
 	walker := &mockFileWalker{}
 	svc := indexing.NewService(walker, store, func() string { return "id" })
 
+	// Act
 	diff, err := svc.DiffSnapshots(context.Background(), "snap-from", "snap-to")
 
+	// Assert
 	assert.That(t, "error must be nil", err == nil, true)
 	assert.That(t, "changed count must be 1", len(diff.Changed), 1)
 }
 
-func TestService_DiffSnapshots_SnapshotNotFound(t *testing.T) {
+func Test_Service_DiffSnapshots_With_NonexistentSnapshot_Should_ReturnError(t *testing.T) {
+	// Arrange
 	store := newMockIndexStore()
 	walker := &mockFileWalker{}
 	svc := indexing.NewService(walker, store, func() string { return "id" })
 
+	// Act
 	_, err := svc.DiffSnapshots(context.Background(), "nonexistent", "also-nonexistent")
 
+	// Assert
 	assert.That(t, "error must not be nil", err != nil, true)
 }

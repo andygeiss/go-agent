@@ -83,7 +83,8 @@ type indexDiffSnapshotResult struct {
 	Removed []string `json:"removed"`
 }
 
-func TestIndexToolService_IndexScan(t *testing.T) {
+func Test_IndexToolService_IndexScan_Should_ReturnSnapshotInfo(t *testing.T) {
+	// Arrange
 	now := time.Now()
 	files := []indexing.FileInfo{
 		indexing.NewFileInfo("/path/to/file1.go", now, 100),
@@ -97,8 +98,11 @@ func TestIndexToolService_IndexScan(t *testing.T) {
 	toolSvc := tooling.NewIndexToolService(svc)
 
 	args := `{"paths": ["/path/to/project"]}`
+
+	// Act
 	result, err := toolSvc.IndexScan(context.Background(), args)
 
+	// Assert
 	assert.That(t, "error must be nil", err == nil, true)
 
 	var response indexScanResult
@@ -109,19 +113,24 @@ func TestIndexToolService_IndexScan(t *testing.T) {
 	assert.That(t, "files indexed must be 2", response.FilesIndexed, 2)
 }
 
-func TestIndexToolService_IndexScan_NoPaths(t *testing.T) {
+func Test_IndexToolService_IndexScan_With_EmptyPaths_Should_ReturnError(t *testing.T) {
+	// Arrange
 	walker := &mockIndexFileWalker{}
 	store := newMockIndexingStore()
 	svc := indexing.NewService(walker, store, func() string { return "id" })
 	toolSvc := tooling.NewIndexToolService(svc)
 
 	args := `{"paths": []}`
+
+	// Act
 	_, err := toolSvc.IndexScan(context.Background(), args)
 
+	// Assert
 	assert.That(t, "error must not be nil", err != nil, true)
 }
 
-func TestIndexToolService_IndexChangedSince(t *testing.T) {
+func Test_IndexToolService_IndexChangedSince_Should_ReturnChangedFiles(t *testing.T) {
+	// Arrange
 	baseTime := time.Now().Add(-2 * time.Hour)
 	files := []indexing.FileInfo{
 		indexing.NewFileInfo("/path/to/old.go", baseTime.Add(-1*time.Hour), 100),
@@ -136,8 +145,11 @@ func TestIndexToolService_IndexChangedSince(t *testing.T) {
 	toolSvc := tooling.NewIndexToolService(svc)
 
 	args := `{"since": "` + baseTime.Format(time.RFC3339) + `"}`
+
+	// Act
 	result, err := toolSvc.IndexChangedSince(context.Background(), args)
 
+	// Assert
 	assert.That(t, "error must be nil", err == nil, true)
 
 	var response indexChangedSinceResult
@@ -147,19 +159,24 @@ func TestIndexToolService_IndexChangedSince(t *testing.T) {
 	assert.That(t, "count must be 1", response.Count, 1)
 }
 
-func TestIndexToolService_IndexChangedSince_InvalidTimestamp(t *testing.T) {
+func Test_IndexToolService_IndexChangedSince_With_InvalidTimestamp_Should_ReturnError(t *testing.T) {
+	// Arrange
 	walker := &mockIndexFileWalker{}
 	store := newMockIndexingStore()
 	svc := indexing.NewService(walker, store, func() string { return "id" })
 	toolSvc := tooling.NewIndexToolService(svc)
 
 	args := `{"since": "invalid-timestamp"}`
+
+	// Act
 	_, err := toolSvc.IndexChangedSince(context.Background(), args)
 
+	// Assert
 	assert.That(t, "error must not be nil", err != nil, true)
 }
 
-func TestIndexToolService_IndexDiffSnapshot(t *testing.T) {
+func Test_IndexToolService_IndexDiffSnapshot_Should_ReturnDiff(t *testing.T) {
+	// Arrange
 	now := time.Now()
 
 	fromFiles := []indexing.FileInfo{
@@ -181,8 +198,11 @@ func TestIndexToolService_IndexDiffSnapshot(t *testing.T) {
 	toolSvc := tooling.NewIndexToolService(svc)
 
 	args := `{"from_id": "snap-from", "to_id": "snap-to"}`
+
+	// Act
 	result, err := toolSvc.IndexDiffSnapshot(context.Background(), args)
 
+	// Assert
 	assert.That(t, "error must be nil", err == nil, true)
 
 	var response indexDiffSnapshotResult
@@ -193,40 +213,49 @@ func TestIndexToolService_IndexDiffSnapshot(t *testing.T) {
 	assert.That(t, "removed count must be 1", len(response.Removed), 1)
 }
 
-func TestNewIndexScanTool(t *testing.T) {
+func Test_NewIndexScanTool_Should_ReturnValidTool(t *testing.T) {
+	// Arrange
 	walker := &mockIndexFileWalker{}
 	store := newMockIndexingStore()
 	svc := indexing.NewService(walker, store, func() string { return "id" })
 	toolSvc := tooling.NewIndexToolService(svc)
 
+	// Act
 	tool := tooling.NewIndexScanTool(toolSvc)
 
+	// Assert
 	assert.That(t, "tool ID must match", tool.ID, agent.ToolID("index.scan"))
 	assert.That(t, "definition name must match", tool.Definition.Name, "index.scan")
 	assert.That(t, "func must not be nil", tool.Func != nil, true)
 }
 
-func TestNewIndexChangedSinceTool(t *testing.T) {
+func Test_NewIndexChangedSinceTool_Should_ReturnValidTool(t *testing.T) {
+	// Arrange
 	walker := &mockIndexFileWalker{}
 	store := newMockIndexingStore()
 	svc := indexing.NewService(walker, store, func() string { return "id" })
 	toolSvc := tooling.NewIndexToolService(svc)
 
+	// Act
 	tool := tooling.NewIndexChangedSinceTool(toolSvc)
 
+	// Assert
 	assert.That(t, "tool ID must match", tool.ID, agent.ToolID("index.changed_since"))
 	assert.That(t, "definition name must match", tool.Definition.Name, "index.changed_since")
 	assert.That(t, "func must not be nil", tool.Func != nil, true)
 }
 
-func TestNewIndexDiffSnapshotTool(t *testing.T) {
+func Test_NewIndexDiffSnapshotTool_Should_ReturnValidTool(t *testing.T) {
+	// Arrange
 	walker := &mockIndexFileWalker{}
 	store := newMockIndexingStore()
 	svc := indexing.NewService(walker, store, func() string { return "id" })
 	toolSvc := tooling.NewIndexToolService(svc)
 
+	// Act
 	tool := tooling.NewIndexDiffSnapshotTool(toolSvc)
 
+	// Assert
 	assert.That(t, "tool ID must match", tool.ID, agent.ToolID("index.diff_snapshot"))
 	assert.That(t, "definition name must match", tool.Definition.Name, "index.diff_snapshot")
 	assert.That(t, "func must not be nil", tool.Func != nil, true)

@@ -160,13 +160,15 @@ func Test_MemoryNote_SearchableText_Should_CombineAllTextFields(t *testing.T) {
 	note := agent.NewMemoryNote("note-123", agent.SourceTypePreference).
 		WithRawContent("User prefers German").
 		WithSummary("Language preference").
-		WithContextDescription("Apply to all responses")
+		WithContextDescription("Apply to all responses").
+		WithTags("language", "preference").
+		WithKeywords("german", "locale")
 
 	// Act
 	text := note.SearchableText()
 
 	// Assert
-	assert.That(t, "searchable text must contain raw content", text, "User prefers German Language preference Apply to all responses")
+	assert.That(t, "searchable text must contain raw content", text, "User prefers German Language preference Apply to all responses language preference german locale")
 }
 
 func Test_MemoryNote_SearchableText_WithPartialFields_Should_ReturnAvailableText(t *testing.T) {

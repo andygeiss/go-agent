@@ -10,11 +10,9 @@ import (
 	"github.com/andygeiss/go-agent/internal/adapters/inbound"
 )
 
-func TestFSWalker_Walk(t *testing.T) {
-	// Create a temp directory with test files
+func Test_FSWalker_Walk_Should_ReturnAllFiles(t *testing.T) {
+	// Arrange
 	tempDir := t.TempDir()
-
-	// Create some test files
 	file1 := filepath.Join(tempDir, "file1.go")
 	file2 := filepath.Join(tempDir, "file2.txt")
 	subDir := filepath.Join(tempDir, "subdir")
@@ -26,13 +24,17 @@ func TestFSWalker_Walk(t *testing.T) {
 	_ = os.WriteFile(file3, []byte("content3"), 0600)
 
 	walker := inbound.NewFSWalker()
+
+	// Act
 	files, err := walker.Walk(context.Background(), []string{tempDir}, nil)
 
+	// Assert
 	assert.That(t, "error must be nil", err == nil, true)
 	assert.That(t, "files count must be 3", len(files), 3)
 }
 
-func TestFSWalker_Walk_ContextCancellation(t *testing.T) {
+func Test_FSWalker_Walk_With_CanceledContext_Should_ReturnError(t *testing.T) {
+	// Arrange
 	tempDir := t.TempDir()
 	file1 := filepath.Join(tempDir, "file1.go")
 	_ = os.WriteFile(file1, []byte("content1"), 0600)
@@ -41,12 +43,15 @@ func TestFSWalker_Walk_ContextCancellation(t *testing.T) {
 	cancel() // Cancel immediately
 
 	walker := inbound.NewFSWalker()
+
+	// Act
 	_, err := walker.Walk(ctx, []string{tempDir}, nil)
 
+	// Assert
 	assert.That(t, "error must not be nil", err != nil, true)
 }
 
-func TestFSWalker_Walk_IgnorePatterns(t *testing.T) {
+func Test_FSWalker_Walk_With_IgnorePatterns_Should_ExcludeMatchingFiles(t *testing.T) {
 	tests := []struct { //nolint:govet // anonymous struct, alignment acceptable
 		ignorePattern []string
 		name          string
@@ -71,38 +76,44 @@ func TestFSWalker_Walk_IgnorePatterns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
 			tempDir := t.TempDir()
 			_ = os.WriteFile(filepath.Join(tempDir, "file.go"), []byte("go"), 0600)
 			_ = os.WriteFile(filepath.Join(tempDir, "file.txt"), []byte("txt"), 0600)
 			_ = os.WriteFile(filepath.Join(tempDir, "file.log"), []byte("log"), 0600)
 
 			walker := inbound.NewFSWalker()
+
+			// Act
 			files, err := walker.Walk(context.Background(), []string{tempDir}, tt.ignorePattern)
 
+			// Assert
 			assert.That(t, "error must be nil", err == nil, true)
 			assert.That(t, "file count must match", len(files), tt.expected)
 		})
 	}
 }
 
-func TestFSWalker_Walk_WithHash(t *testing.T) {
+func Test_FSWalker_Walk_With_HashEnabled_Should_ComputeFileHashes(t *testing.T) {
+	// Arrange
 	tempDir := t.TempDir()
 	file1 := filepath.Join(tempDir, "file1.go")
 	_ = os.WriteFile(file1, []byte("content1"), 0600)
 
 	walker := inbound.NewFSWalker().WithHash(true)
+
+	// Act
 	files, err := walker.Walk(context.Background(), []string{tempDir}, nil)
 
+	// Assert
 	assert.That(t, "error must be nil", err == nil, true)
 	assert.That(t, "files count must be 1", len(files), 1)
 	assert.That(t, "hash must not be empty", files[0].Hash != "", true)
 }
 
-func TestFSWalker_Walk_WithIgnore(t *testing.T) {
-	// Create a temp directory with test files
+func Test_FSWalker_Walk_With_IgnoredDirectory_Should_SkipDirectory(t *testing.T) {
+	// Arrange
 	tempDir := t.TempDir()
-
-	// Create some test files
 	file1 := filepath.Join(tempDir, "file1.go")
 	file2 := filepath.Join(tempDir, "file2.txt")
 	ignoredDir := filepath.Join(tempDir, "node_modules")
@@ -114,39 +125,54 @@ func TestFSWalker_Walk_WithIgnore(t *testing.T) {
 	_ = os.WriteFile(ignoredFile, []byte("ignored"), 0600)
 
 	walker := inbound.NewFSWalker()
+
+	// Act
 	files, err := walker.Walk(context.Background(), []string{tempDir}, []string{"node_modules"})
 
+	// Assert
 	assert.That(t, "error must be nil", err == nil, true)
 	assert.That(t, "files count must be 2", len(files), 2)
 }
 
-func TestFSWalker_WalkSingleFile(t *testing.T) {
+func Test_FSWalker_WalkSingleFile_Should_ReturnFileInfo(t *testing.T) {
+	// Arrange
 	tempDir := t.TempDir()
 	filePath := filepath.Join(tempDir, "single.go")
 	_ = os.WriteFile(filePath, []byte("single file content"), 0600)
 
 	walker := inbound.NewFSWalker()
+
+	// Act
 	info, err := walker.WalkSingleFile(filePath)
 
+	// Assert
 	assert.That(t, "error must be nil", err == nil, true)
 	assert.That(t, "size must be 19", info.Size, int64(19))
 }
 
-func TestFSWalker_WalkSingleFile_NotFound(t *testing.T) {
+func Test_FSWalker_WalkSingleFile_With_NonexistentFile_Should_ReturnError(t *testing.T) {
+	// Arrange
 	walker := inbound.NewFSWalker()
+
+	// Act
 	_, err := walker.WalkSingleFile("/nonexistent/path/file.go")
 
+	// Assert
 	assert.That(t, "error must not be nil", err != nil, true)
 }
 
-func TestFSWalker_WalkSingleFile_WithHash(t *testing.T) {
+func Test_FSWalker_WalkSingleFile_With_HashEnabled_Should_ComputeHash(t *testing.T) {
+	// Arrange
 	tempDir := t.TempDir()
 	filePath := filepath.Join(tempDir, "single.go")
 	_ = os.WriteFile(filePath, []byte("single file content"), 0600)
 
 	walker := inbound.NewFSWalker().WithHash(true)
+
+	// Act
 	info, err := walker.WalkSingleFile(filePath)
 
+	// Assert
 	assert.That(t, "error must be nil", err == nil, true)
 	assert.That(t, "hash must not be empty", info.Hash != "", true)
 }

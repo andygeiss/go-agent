@@ -204,13 +204,55 @@ go-agent/
 
 ### 5.4 Testing
 
-**Framework:** Standard `testing` package
+**Framework:** Standard `testing` package with `github.com/andygeiss/cloud-native-utils/assert`
+
+**Test naming convention:**
+
+All test functions follow the pattern: `Test_<Subject>_<Method>_With_<Condition>_Should_<ExpectedBehavior>`
+
+| Part | Description | Example |
+|------|-------------|---------|
+| `Test_` | Required prefix | `Test_` |
+| `<Subject>` | Type or service being tested | `Agent`, `MemoryStore`, `IndexToolService` |
+| `<Method>` | Method under test | `AddTask`, `Search`, `IndexScan` |
+| `With_<Condition>` | Optional precondition | `With_EmptyPaths`, `With_InvalidTimestamp` |
+| `Should_<Behavior>` | Expected outcome | `Should_ReturnError`, `Should_StoreNote` |
+
+**Examples:**
+```go
+// Simple test
+func Test_NewFileInfo_Should_SetAllFields(t *testing.T)
+
+// With condition
+func Test_IndexToolService_IndexScan_With_EmptyPaths_Should_ReturnError(t *testing.T)
+
+// Complex scenario
+func Test_MemoryStore_Search_With_SourceTypeFilter_Should_ReturnMatchingNotes(t *testing.T)
+```
+
+**AAA pattern:**
+
+All tests use the Arrange-Act-Assert pattern with explicit section comments:
+
+```go
+func Test_Agent_AddTask_With_Task_Should_AddToQueue(t *testing.T) {
+    // Arrange
+    ag := agent.NewAgent("agent-1", "prompt")
+    task := agent.NewTask("task-1", "Test Task", "test input")
+
+    // Act
+    ag.AddTask(task)
+
+    // Assert
+    assert.That(t, "agent must have pending task", ag.HasPendingTasks(), true)
+}
+```
 
 **Organization:**
-- Test files: `*_test.go` in same package
+- Test files: `*_test.go` in same package (e.g., `package agent_test`)
 - Unit tests: Test single functions/methods in isolation
-- Table-driven tests: Use `tests := []struct{...}` pattern
-- Benchmarks: `Benchmark*` functions in `*_test.go` (see `cmd/cli/main_test.go` for PGO benchmarks)
+- Table-driven tests: Use `tests := []struct{...}` pattern for multiple scenarios
+- Benchmarks: `Benchmark_*` functions in `*_test.go` (see `cmd/cli/main_test.go` for PGO benchmarks)
 
 **Benchmark categories** (in `cmd/cli/main_test.go`):
 - **FSWalker Benchmarks** — Real file system walking with/without ignore patterns
