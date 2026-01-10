@@ -3,12 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/andygeiss/cloud-native-utils/event"
+	"github.com/andygeiss/go-agent/internal/adapters/inbound"
 	"github.com/andygeiss/go-agent/internal/adapters/outbound"
 	"github.com/andygeiss/go-agent/internal/domain/agent"
 	"github.com/andygeiss/go-agent/internal/domain/chatting"
+	"github.com/andygeiss/go-agent/internal/domain/indexing"
 	"github.com/andygeiss/go-agent/internal/domain/memorizing"
 	"github.com/andygeiss/go-agent/internal/domain/tooling"
 )
@@ -1058,5 +1063,546 @@ func Benchmark_MemoryNote_HasKeyword(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		_ = note.HasKeyword("preference")
+	}
+}
+
+// =============================================================================
+// Indexing Benchmarks - File system indexing and snapshot operations
+// =============================================================================
+
+// mockFileWalker implements indexing.FileWalker for benchmarking.
+type mockFileWalker struct {
+	files []indexing.FileInfo
+}
+
+func (m *mockFileWalker) Walk(_ context.Context, _ []string, _ []string) ([]indexing.FileInfo, error) {
+	return m.files, nil
+}
+
+// generateMockFiles creates a slice of mock FileInfo for benchmarking.
+func generateMockFiles(count int) []indexing.FileInfo {
+	files := make([]indexing.FileInfo, count)
+	now := time.Now()
+	for i := range count {
+		files[i] = indexing.NewFileInfo(
+			fmt.Sprintf("/mock/path/to/file_%d.go", i),
+			now.Add(-time.Duration(i)*time.Minute),
+			int64(i*100+1024),
+		)
+	}
+	return files
+}
+
+// generateMockSnapshot creates a mock snapshot with the given file count.
+func generateMockSnapshot(id string, fileCount int) indexing.Snapshot {
+	return indexing.NewSnapshot(indexing.SnapshotID(id), generateMockFiles(fileCount))
+}
+
+// snapshotIDGen creates a simple ID generator for benchmarks.
+func snapshotIDGen() func() string {
+	counter := 0
+	return func() string {
+		counter++
+		return fmt.Sprintf("snap-%d", counter)
+	}
+}
+
+// Benchmark_IndexingService_Scan_100Files benchmarks scanning 100 files.
+func Benchmark_IndexingService_Scan_100Files(b *testing.B) {
+	ctx := context.Background()
+	walker := &mockFileWalker{files: generateMockFiles(100)}
+	store := outbound.NewInMemoryIndexStore()
+	svc := indexing.NewService(walker, store, snapshotIDGen())
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = svc.Scan(ctx, []string{"/mock"}, nil)
+	}
+}
+
+// Benchmark_IndexingService_Scan_1000Files benchmarks scanning 1000 files.
+func Benchmark_IndexingService_Scan_1000Files(b *testing.B) {
+	ctx := context.Background()
+	walker := &mockFileWalker{files: generateMockFiles(1000)}
+	store := outbound.NewInMemoryIndexStore()
+	svc := indexing.NewService(walker, store, snapshotIDGen())
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = svc.Scan(ctx, []string{"/mock"}, nil)
+	}
+}
+
+// Benchmark_IndexingService_Scan_10000Files benchmarks scanning 10000 files.
+func Benchmark_IndexingService_Scan_10000Files(b *testing.B) {
+	ctx := context.Background()
+	walker := &mockFileWalker{files: generateMockFiles(10000)}
+	store := outbound.NewInMemoryIndexStore()
+	svc := indexing.NewService(walker, store, snapshotIDGen())
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = svc.Scan(ctx, []string{"/mock"}, nil)
+	}
+}
+
+// Benchmark_IndexingService_ChangedSince_100Files benchmarks filtering changed files.
+func Benchmark_IndexingService_ChangedSince_100Files(b *testing.B) {
+	ctx := context.Background()
+	walker := &mockFileWalker{files: generateMockFiles(100)}
+	store := outbound.NewInMemoryIndexStore()
+	svc := indexing.NewService(walker, store, snapshotIDGen())
+
+	// Create a snapshot first
+	_, _ = svc.Scan(ctx, []string{"/mock"}, nil)
+	since := time.Now().Add(-30 * time.Minute)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = svc.ChangedSince(ctx, since)
+	}
+}
+
+// Benchmark_IndexingService_ChangedSince_1000Files benchmarks filtering changed files.
+func Benchmark_IndexingService_ChangedSince_1000Files(b *testing.B) {
+	ctx := context.Background()
+	walker := &mockFileWalker{files: generateMockFiles(1000)}
+	store := outbound.NewInMemoryIndexStore()
+	svc := indexing.NewService(walker, store, snapshotIDGen())
+
+	// Create a snapshot first
+	_, _ = svc.Scan(ctx, []string{"/mock"}, nil)
+	since := time.Now().Add(-30 * time.Minute)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = svc.ChangedSince(ctx, since)
+	}
+}
+
+// Benchmark_IndexingService_ChangedSince_10000Files benchmarks filtering changed files.
+func Benchmark_IndexingService_ChangedSince_10000Files(b *testing.B) {
+	ctx := context.Background()
+	walker := &mockFileWalker{files: generateMockFiles(10000)}
+	store := outbound.NewInMemoryIndexStore()
+	svc := indexing.NewService(walker, store, snapshotIDGen())
+
+	// Create a snapshot first
+	_, _ = svc.Scan(ctx, []string{"/mock"}, nil)
+	since := time.Now().Add(-30 * time.Minute)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = svc.ChangedSince(ctx, since)
+	}
+}
+
+// Benchmark_IndexingService_DiffSnapshots_100Files benchmarks diffing snapshots.
+func Benchmark_IndexingService_DiffSnapshots_100Files(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryIndexStore()
+
+	// Create two snapshots with some differences
+	snapshot1 := generateMockSnapshot("snap-1", 100)
+	snapshot2 := generateMockSnapshot("snap-2", 100)
+	_ = store.SaveSnapshot(ctx, snapshot1)
+	_ = store.SaveSnapshot(ctx, snapshot2)
+
+	walker := &mockFileWalker{}
+	svc := indexing.NewService(walker, store, snapshotIDGen())
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = svc.DiffSnapshots(ctx, "snap-1", "snap-2")
+	}
+}
+
+// Benchmark_IndexingService_DiffSnapshots_1000Files benchmarks diffing snapshots.
+func Benchmark_IndexingService_DiffSnapshots_1000Files(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryIndexStore()
+
+	// Create two snapshots with some differences
+	snapshot1 := generateMockSnapshot("snap-1", 1000)
+	snapshot2 := generateMockSnapshot("snap-2", 1000)
+	_ = store.SaveSnapshot(ctx, snapshot1)
+	_ = store.SaveSnapshot(ctx, snapshot2)
+
+	walker := &mockFileWalker{}
+	svc := indexing.NewService(walker, store, snapshotIDGen())
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = svc.DiffSnapshots(ctx, "snap-1", "snap-2")
+	}
+}
+
+// Benchmark_IndexingService_DiffSnapshots_10000Files benchmarks diffing snapshots.
+func Benchmark_IndexingService_DiffSnapshots_10000Files(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryIndexStore()
+
+	// Create two snapshots with some differences
+	snapshot1 := generateMockSnapshot("snap-1", 10000)
+	snapshot2 := generateMockSnapshot("snap-2", 10000)
+	_ = store.SaveSnapshot(ctx, snapshot1)
+	_ = store.SaveSnapshot(ctx, snapshot2)
+
+	walker := &mockFileWalker{}
+	svc := indexing.NewService(walker, store, snapshotIDGen())
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = svc.DiffSnapshots(ctx, "snap-1", "snap-2")
+	}
+}
+
+// Benchmark_IndexStore_SaveSnapshot_100Files benchmarks saving snapshots.
+func Benchmark_IndexStore_SaveSnapshot_100Files(b *testing.B) {
+	ctx := context.Background()
+	snapshot := generateMockSnapshot("snap-1", 100)
+
+	b.ResetTimer()
+	for b.Loop() {
+		store := outbound.NewInMemoryIndexStore()
+		_ = store.SaveSnapshot(ctx, snapshot)
+	}
+}
+
+// Benchmark_IndexStore_SaveSnapshot_1000Files benchmarks saving snapshots.
+func Benchmark_IndexStore_SaveSnapshot_1000Files(b *testing.B) {
+	ctx := context.Background()
+	snapshot := generateMockSnapshot("snap-1", 1000)
+
+	b.ResetTimer()
+	for b.Loop() {
+		store := outbound.NewInMemoryIndexStore()
+		_ = store.SaveSnapshot(ctx, snapshot)
+	}
+}
+
+// Benchmark_IndexStore_GetSnapshot benchmarks retrieving snapshots.
+func Benchmark_IndexStore_GetSnapshot(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryIndexStore()
+	snapshot := generateMockSnapshot("snap-1", 1000)
+	_ = store.SaveSnapshot(ctx, snapshot)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.GetSnapshot(ctx, "snap-1")
+	}
+}
+
+// Benchmark_IndexStore_GetLatestSnapshot benchmarks retrieving latest snapshot.
+func Benchmark_IndexStore_GetLatestSnapshot(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryIndexStore()
+	snapshot := generateMockSnapshot("snap-1", 1000)
+	_ = store.SaveSnapshot(ctx, snapshot)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.GetLatestSnapshot(ctx)
+	}
+}
+
+// Benchmark_FSWalker_Walk_RealFS benchmarks real file system walking.
+// This benchmark uses a temp directory with synthetic files.
+func Benchmark_FSWalker_Walk_RealFS(b *testing.B) {
+	// Create temp directory with test files
+	tempDir := b.TempDir()
+
+	// Create 100 test files
+	for i := range 100 {
+		path := filepath.Join(tempDir, fmt.Sprintf("file_%d.txt", i))
+		if err := os.WriteFile(path, []byte("test content"), 0600); err != nil {
+			b.Fatalf("Failed to create test file: %v", err)
+		}
+	}
+
+	ctx := context.Background()
+	walker := inbound.NewFSWalker()
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = walker.Walk(ctx, []string{tempDir}, nil)
+	}
+}
+
+// Benchmark_FSWalker_Walk_WithIgnore benchmarks walking with ignore patterns.
+func Benchmark_FSWalker_Walk_WithIgnore(b *testing.B) {
+	// Create temp directory with test files
+	tempDir := b.TempDir()
+
+	// Create mixed test files
+	for i := range 100 {
+		path := filepath.Join(tempDir, fmt.Sprintf("file_%d.go", i))
+		if err := os.WriteFile(path, []byte("test content"), 0600); err != nil {
+			b.Fatalf("Failed to create test file: %v", err)
+		}
+		logPath := filepath.Join(tempDir, fmt.Sprintf("file_%d.log", i))
+		if err := os.WriteFile(logPath, []byte("log content"), 0600); err != nil {
+			b.Fatalf("Failed to create log file: %v", err)
+		}
+	}
+
+	ctx := context.Background()
+	walker := inbound.NewFSWalker()
+	ignore := []string{"*.log"}
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = walker.Walk(ctx, []string{tempDir}, ignore)
+	}
+}
+
+// Benchmark_IndexToolService_IndexScan benchmarks the index.scan tool.
+func Benchmark_IndexToolService_IndexScan(b *testing.B) {
+	ctx := context.Background()
+	walker := &mockFileWalker{files: generateMockFiles(100)}
+	store := outbound.NewInMemoryIndexStore()
+	svc := indexing.NewService(walker, store, snapshotIDGen())
+	toolSvc := tooling.NewIndexToolService(svc)
+
+	args := `{"paths": ["/mock"]}`
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = toolSvc.IndexScan(ctx, args)
+	}
+}
+
+// Benchmark_IndexToolService_IndexChangedSince benchmarks the index.changed_since tool.
+func Benchmark_IndexToolService_IndexChangedSince(b *testing.B) {
+	ctx := context.Background()
+	walker := &mockFileWalker{files: generateMockFiles(100)}
+	store := outbound.NewInMemoryIndexStore()
+	svc := indexing.NewService(walker, store, snapshotIDGen())
+	toolSvc := tooling.NewIndexToolService(svc)
+
+	// Create initial snapshot
+	_, _ = svc.Scan(ctx, []string{"/mock"}, nil)
+	args := `{"since": "2024-01-01T00:00:00Z"}`
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = toolSvc.IndexChangedSince(ctx, args)
+	}
+}
+
+// Benchmark_IndexToolService_IndexDiffSnapshot benchmarks the index.diff_snapshot tool.
+func Benchmark_IndexToolService_IndexDiffSnapshot(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryIndexStore()
+
+	// Create two snapshots
+	snapshot1 := generateMockSnapshot("snap-1", 100)
+	snapshot2 := generateMockSnapshot("snap-2", 100)
+	_ = store.SaveSnapshot(ctx, snapshot1)
+	_ = store.SaveSnapshot(ctx, snapshot2)
+
+	walker := &mockFileWalker{}
+	svc := indexing.NewService(walker, store, snapshotIDGen())
+	toolSvc := tooling.NewIndexToolService(svc)
+
+	args := `{"from_id": "snap-1", "to_id": "snap-2"}`
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = toolSvc.IndexDiffSnapshot(ctx, args)
+	}
+}
+
+// Benchmark_Snapshot_FileCount benchmarks FileCount method.
+func Benchmark_Snapshot_FileCount(b *testing.B) {
+	snapshot := generateMockSnapshot("snap-1", 10000)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = snapshot.FileCount()
+	}
+}
+
+// Benchmark_Snapshot_GetFileByPath benchmarks GetFileByPath method.
+func Benchmark_Snapshot_GetFileByPath(b *testing.B) {
+	snapshot := generateMockSnapshot("snap-1", 10000)
+	targetPath := "/mock/path/to/file_5000.go"
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = snapshot.GetFileByPath(targetPath)
+	}
+}
+
+// Benchmark_NewFileInfo benchmarks FileInfo creation.
+func Benchmark_NewFileInfo(b *testing.B) {
+	now := time.Now()
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = indexing.NewFileInfo("/path/to/file.go", now, 1024)
+	}
+}
+
+// Benchmark_NewSnapshot benchmarks Snapshot creation.
+func Benchmark_NewSnapshot(b *testing.B) {
+	files := generateMockFiles(1000)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = indexing.NewSnapshot("snap-1", files)
+	}
+}
+
+// =============================================================================
+// Unit Tests for CLI Helper Functions
+// =============================================================================
+
+// Test_parseIndexScanArgs tests the parseIndexScanArgs function.
+func Test_parseIndexScanArgs_With_Paths_Should_ReturnPaths(t *testing.T) {
+	args := []string{"./src", "./lib"}
+	paths, ignore := parseIndexScanArgs(args)
+
+	if len(paths) != 2 {
+		t.Errorf("Expected 2 paths, got %d", len(paths))
+	}
+	if paths[0] != "./src" || paths[1] != "./lib" {
+		t.Errorf("Unexpected paths: %v", paths)
+	}
+	// Should have default ignore patterns
+	if len(ignore) == 0 {
+		t.Error("Expected default ignore patterns")
+	}
+}
+
+// Test_parseIndexScanArgs tests arguments with ignore separator.
+func Test_parseIndexScanArgs_With_IgnoreSeparator_Should_SplitCorrectly(t *testing.T) {
+	args := []string{"./src", "--", ".git", "*.log"}
+	paths, ignore := parseIndexScanArgs(args)
+
+	if len(paths) != 1 || paths[0] != "./src" {
+		t.Errorf("Unexpected paths: %v", paths)
+	}
+	if len(ignore) != 2 || ignore[0] != ".git" || ignore[1] != "*.log" {
+		t.Errorf("Unexpected ignore patterns: %v", ignore)
+	}
+}
+
+// Test_parseIndexScanArgs tests empty arguments.
+func Test_parseIndexScanArgs_With_EmptyArgs_Should_UseDefaults(t *testing.T) {
+	args := []string{}
+	paths, ignore := parseIndexScanArgs(args)
+
+	if len(paths) != 1 {
+		t.Errorf("Expected 1 default path, got %d", len(paths))
+	}
+	if len(ignore) == 0 {
+		t.Error("Expected default ignore patterns")
+	}
+}
+
+// Test_parseSinceTime tests RFC3339 parsing.
+func Test_parseSinceTime_With_RFC3339_Should_ParseCorrectly(t *testing.T) {
+	args := []string{"2024-01-15T10:00:00Z"}
+	result := parseSinceTime(args)
+
+	if result.IsZero() {
+		t.Error("Expected non-zero time")
+	}
+	if result.Year() != 2024 || result.Month() != 1 || result.Day() != 15 {
+		t.Errorf("Unexpected date: %v", result)
+	}
+}
+
+// Test_parseSinceTime tests duration parsing.
+func Test_parseSinceTime_With_Duration_Should_ParseCorrectly(t *testing.T) {
+	args := []string{"1h"}
+	result := parseSinceTime(args)
+
+	if result.IsZero() {
+		t.Error("Expected non-zero time")
+	}
+}
+
+// Test_parseSinceTime tests empty args default.
+func Test_parseSinceTime_With_EmptyArgs_Should_DefaultTo24Hours(t *testing.T) {
+	args := []string{}
+	result := parseSinceTime(args)
+
+	if result.IsZero() {
+		t.Error("Expected non-zero time")
+	}
+}
+
+// Test_parseSinceTime tests invalid format.
+func Test_parseSinceTime_With_InvalidFormat_Should_ReturnZero(t *testing.T) {
+	// Capture stdout to suppress error message during test
+	oldStdout := os.Stdout
+	os.Stdout, _ = os.Open(os.DevNull)
+	defer func() { os.Stdout = oldStdout }()
+
+	args := []string{"invalid-time"}
+	result := parseSinceTime(args)
+
+	if !result.IsZero() {
+		t.Errorf("Expected zero time for invalid format, got %v", result)
+	}
+}
+
+// Test_truncate tests string truncation.
+func Test_truncate_With_ShortString_Should_ReturnUnchanged(t *testing.T) {
+	result := truncate("short", 10)
+	if result != "short" {
+		t.Errorf("Expected 'short', got '%s'", result)
+	}
+}
+
+// Test_truncate tests string truncation with long string.
+func Test_truncate_With_LongString_Should_Truncate(t *testing.T) {
+	result := truncate("this is a very long string", 10)
+	if len(result) > 10 {
+		t.Errorf("Expected max 10 chars, got %d", len(result))
+	}
+	if result != "this is..." {
+		t.Errorf("Expected 'this is...', got '%s'", result)
+	}
+}
+
+// Test_truncate tests newline removal.
+func Test_truncate_With_Newlines_Should_RemoveThem(t *testing.T) {
+	result := truncate("line1\nline2", 20)
+	if result != "line1 line2" {
+		t.Errorf("Expected newlines removed, got '%s'", result)
+	}
+}
+
+// Test_generateNoteID tests ID generation.
+func Test_generateNoteID_Should_ReturnValidFormat(t *testing.T) {
+	id := generateNoteID()
+
+	// ID should have correct prefix
+	if id[:5] != "note-" {
+		t.Error("Expected ID to start with 'note-'")
+	}
+
+	// Verify format: note-<nanoseconds>
+	if len(id) <= 5 {
+		t.Error("Expected ID to have timestamp suffix")
+	}
+}
+
+// Test_generateSnapshotID tests snapshot ID generation.
+func Test_generateSnapshotID_Should_ReturnUniqueIDs(t *testing.T) {
+	id1 := generateSnapshotID()
+
+	// IDs should have the correct prefix
+	if id1[:5] != "snap-" {
+		t.Error("Expected ID to start with 'snap-'")
+	}
+
+	// Verify format: snap-<nanoseconds>
+	if len(id1) <= 5 {
+		t.Error("Expected ID to have timestamp suffix")
 	}
 }

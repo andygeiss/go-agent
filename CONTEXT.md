@@ -94,10 +94,14 @@ go-agent/
 │       └── main_test.go        # Integration tests
 ├── internal/
 │   ├── adapters/
-│   │   └── outbound/           # Infrastructure adapters (ports implementations)
+│   │   ├── inbound/            # Inbound adapters (data sources)
+│   │   │   ├── file_walker.go              # FileWalker → filesystem traversal
+│   │   │   └── file_walker_test.go         # Tests
+│   │   └── outbound/           # Outbound adapters (ports implementations)
 │   │       ├── conversation_store.go       # ConversationStore → resource.Access
 │   │       ├── encrypted_conversation_store.go # Encrypted variant with AES-GCM
 │   │       ├── event_publisher.go          # EventPublisher → messaging.Dispatcher
+│   │       ├── index_store.go              # IndexStore → resource.Access
 │   │       ├── memory_store.go             # MemoryStore → resource.Access
 │   │       ├── openai_client.go            # LLMClient → OpenAI-compatible API
 │   │       └── tool_executor.go            # ToolExecutor → tool registry
@@ -115,6 +119,10 @@ go-agent/
 │       │   └── tool_definition.go # ToolDefinition + ParameterDefinition + validation
 │       ├── chatting/           # Chatting use cases
 │       │   └── service.go      # AgentStats + ClearConversationUseCase + GetAgentStatsUseCase + SendMessageUseCase
+│       ├── indexing/           # File system indexing bounded context
+│       │   ├── ports.go        # FileWalker + IndexStore interfaces
+│       │   ├── service.go      # Service: Scan, ChangedSince, DiffSnapshots
+│       │   └── snapshot.go     # FileInfo + Snapshot + DiffResult + HashFile
 │       ├── memorizing/         # Memory management use cases
 │       │   ├── errors.go       # Sentinel errors (ErrNoteIDEmpty, ErrNoteNil)
 │       │   └── service.go      # DeleteNoteUseCase + GetNoteUseCase + SearchNotesUseCase + Service + WriteNoteUseCase
@@ -125,6 +133,7 @@ go-agent/
 │       │   └── tool.go         # FunctionCall + FunctionDefinition + Tool + ToolCall
 │       └── tooling/            # Tool implementations
 │           ├── calculate.go    # Arithmetic calculator with expression parser
+│           ├── index_tools.go  # IndexToolService (IndexScan, IndexChangedSince, IndexDiffSnapshot)
 │           ├── memory_tools.go # MemoryToolService (MemoryGet, MemorySearch, MemoryWrite)
 │           └── time.go         # Current time (RFC3339 format)
 ├── AGENTS.md                   # Agent definitions index
@@ -141,11 +150,12 @@ go-agent/
 | Code type | Location |
 |-----------|----------|
 | CLI commands/flags | `cmd/cli/` |
+| Inbound adapters (data sources) | `internal/adapters/inbound/` |
 | New domain entities/aggregates | `internal/domain/agent/` |
-| New infrastructure adapters | `internal/adapters/outbound/` |
 | New tool implementations | `internal/domain/tooling/` |
 | New use cases | `internal/domain/<bounded-context>/service.go` |
 | OpenAI API types | `internal/domain/openai/` |
+| Outbound adapters (infrastructure) | `internal/adapters/outbound/` |
 | Tests | Same directory as implementation (`*_test.go`) |
 
 ---
@@ -203,12 +213,17 @@ go-agent/
 - Benchmarks: `Benchmark*` functions in `*_test.go` (see `cmd/cli/main_test.go` for PGO benchmarks)
 
 **Benchmark categories** (in `cmd/cli/main_test.go`):
+- **FSWalker Benchmarks** — Real file system walking with/without ignore patterns
 - **Full Stack Benchmarks** — End-to-end use case execution with mock LLM
+- **Index Store Benchmarks** — Snapshot save/get operations
+- **Index Tool Service Benchmarks** — Tool-based indexing operations
+- **Indexing Service Benchmarks** — Scan, ChangedSince, DiffSnapshots at 100/1000/10000 files
 - **Memory Store Benchmarks** — Raw adapter layer operations at 100, 1000, 10000 notes
 - **Memory Tools Benchmarks** — Tool-based memory operations with JSON parsing
 - **Memory Use Case Benchmarks** — Domain layer use cases (Write, Search, Get, Delete)
 - **MemoryNote Object Benchmarks** — Object creation and method performance
 - **Message Handling Benchmarks** — Message creation and trimming
+- **Snapshot Benchmarks** — Snapshot object creation and method performance
 - **Task Service Benchmarks** — Task execution with various tool patterns
 - **Tool Execution Benchmarks** — Real tool execution (calculate, time)
 
@@ -327,6 +342,9 @@ executor.RegisterToolDefinition(tool.Definition)
 Built-in tools (alphabetically sorted):
 - `calculate` — Safe arithmetic expression evaluator with operator precedence
 - `get_current_time` — Returns current date/time in RFC3339 format
+- `index.changed_since` — Find files modified after a timestamp
+- `index.diff_snapshot` — Compare two snapshots to find added/changed/removed files
+- `index.scan` — Scan directories and create a file system snapshot
 - `memory_get` — Retrieve a specific note by ID
 - `memory_search` — Search notes with query and filters
 - `memory_write` — Store a new memory note
@@ -384,9 +402,12 @@ go build -ldflags "-s -w" -pgo cpuprofile.pprof -o go-agent ./cmd/cli
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `-index-file` | `""` | JSON file for persistent indexing (empty = in-memory) |
 | `-max-iterations` | `10` | Max iterations per task |
 | `-max-messages` | `50` | Max messages to retain (0 = unlimited) |
+| `-memory-file` | `""` | JSON file for persistent memory (empty = in-memory) |
 | `-model` | `$LM_STUDIO_MODEL` | Model name |
+| `-parallel-tools` | `false` | Execute tools in parallel |
 | `-url` | `http://localhost:1234` | LM Studio API base URL |
 | `-verbose` | `false` | Show detailed metrics |
 

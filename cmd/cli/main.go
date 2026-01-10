@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/andygeiss/cloud-native-utils/messaging"
+	"github.com/andygeiss/go-agent/internal/adapters/inbound"
 	"github.com/andygeiss/go-agent/internal/adapters/outbound"
 	"github.com/andygeiss/go-agent/internal/domain/agent"
 	"github.com/andygeiss/go-agent/internal/domain/chatting"
+	"github.com/andygeiss/go-agent/internal/domain/indexing"
 	"github.com/andygeiss/go-agent/internal/domain/memorizing"
 	"github.com/andygeiss/go-agent/internal/domain/tooling"
 )
@@ -23,6 +25,9 @@ const defaultSystemPrompt = `You are a helpful AI assistant with access to tools
 Available tools:
 - calculate: Perform arithmetic calculations (e.g., "2 + 2", "10 * 5")
 - get_current_time: Get the current date and time
+- index.scan: Scan directories and create a snapshot of files
+- index.changed_since: Get files changed since a timestamp
+- index.diff_snapshot: Compare two snapshots for changes
 - memory_get: Retrieve a specific memory note by ID
 - memory_search: Search your long-term memory for relevant notes
 - memory_write: Save important information to long-term memory
@@ -31,11 +36,15 @@ When the user shares preferences, important facts, or asks you to remember somet
 use memory_write to save it. When they refer to past conversations or preferences,
 use memory_search to recall relevant information.
 
-Be concise, helpful, and proactive about using your memory capabilities.`
+When asked to analyze code changes or track file modifications, use the indexing tools
+to scan directories, compare snapshots, and identify what has changed.
+
+Be concise, helpful, and proactive about using your memory and indexing capabilities.`
 
 func main() {
 	// Parse command line flags (alphabetically sorted)
 	baseURL := flag.String("url", "http://localhost:1234", "LM Studio API base URL")
+	indexFile := flag.String("index-file", "", "JSON file for persistent indexing (empty = in-memory)")
 	maxIterations := flag.Int("max-iterations", 10, "Maximum iterations per task")
 	maxMessages := flag.Int("max-messages", 50, "Maximum messages to retain (0 = unlimited)")
 	memoryFile := flag.String("memory-file", "", "JSON file for persistent memory (empty = in-memory)")
@@ -45,10 +54,10 @@ func main() {
 	flag.Parse()
 
 	// Print banner
-	printBanner(*baseURL, *model, *maxIterations, *maxMessages, *memoryFile, *parallelTools)
+	printBanner(*baseURL, *model, *maxIterations, *maxMessages, *memoryFile, *indexFile, *parallelTools)
 
 	// Setup infrastructure
-	infrastructure := setupInfrastructure(*baseURL, *model, *memoryFile, *verbose, *parallelTools)
+	infrastructure := setupInfrastructure(*baseURL, *model, *memoryFile, *indexFile, *verbose, *parallelTools)
 
 	// Create the agent with options
 	agentInstance := agent.NewAgent(
@@ -73,6 +82,8 @@ func main() {
 // infrastructure holds all infrastructure components.
 type infrastructure struct {
 	dispatcher    messaging.Dispatcher
+	indexService  *indexing.Service
+	indexToolSvc  *tooling.IndexToolService
 	llmClient     *outbound.OpenAIClient
 	logger        *slog.Logger
 	memoryStore   *outbound.MemoryStore
@@ -89,6 +100,9 @@ type useCases struct {
 	getAgentStats     *chatting.GetAgentStatsUseCase
 	sendMessage       *chatting.SendMessageUseCase
 
+	// indexing context
+	indexService *indexing.Service
+
 	// memorizing context
 	deleteNote  *memorizing.DeleteNoteUseCase
 	getNote     *memorizing.GetNoteUseCase
@@ -103,6 +117,9 @@ func createUseCases(infra *infrastructure, ag *agent.Agent) *useCases {
 		clearConversation: chatting.NewClearConversationUseCase(ag),
 		getAgentStats:     chatting.NewGetAgentStatsUseCase(ag),
 		sendMessage:       chatting.NewSendMessageUseCase(infra.taskService, ag),
+
+		// indexing context
+		indexService: infra.indexService,
 
 		// memorizing context
 		deleteNote:  memorizing.NewDeleteNoteUseCase(infra.memoryStore),
@@ -141,6 +158,10 @@ func handleCommand(ctx context.Context, input string, uc *useCases) (bool, bool)
 		printHelp()
 		return true, false
 
+	case "index":
+		handleIndexCommand(ctx, parts[1:], uc)
+		return true, false
+
 	case "memory":
 		handleMemoryCommand(ctx, parts[1:], uc)
 		return true, false
@@ -152,6 +173,101 @@ func handleCommand(ctx context.Context, input string, uc *useCases) (bool, bool)
 	default:
 		return false, false
 	}
+}
+
+// handleIndexCommand handles index subcommands.
+func handleIndexCommand(ctx context.Context, args []string, uc *useCases) {
+	if len(args) == 0 {
+		printIndexUsage()
+		return
+	}
+
+	subcmd := strings.ToLower(args[0])
+	subArgs := args[1:]
+
+	switch subcmd {
+	case "changed":
+		handleIndexChanged(ctx, subArgs, uc)
+	case "diff":
+		handleIndexDiff(ctx, subArgs, uc)
+	case "scan":
+		handleIndexScan(ctx, subArgs, uc)
+	default:
+		fmt.Printf("Unknown index command: %s\n", subcmd)
+		printIndexUsage()
+	}
+}
+
+// handleIndexChanged handles the index changed subcommand.
+func handleIndexChanged(ctx context.Context, args []string, uc *useCases) {
+	since := parseSinceTime(args)
+	if since.IsZero() {
+		return // Error already printed by parseSinceTime
+	}
+
+	files, err := uc.indexService.ChangedSince(ctx, since)
+	if err != nil {
+		fmt.Printf("❌ Error: %v\n", err)
+		return
+	}
+
+	printChangedFiles(files, since)
+}
+
+// handleIndexDiff handles the index diff subcommand.
+func handleIndexDiff(ctx context.Context, args []string, uc *useCases) {
+	if len(args) < 2 {
+		fmt.Println("Usage: index diff <from_snapshot_id> <to_snapshot_id>")
+		return
+	}
+
+	fromID := indexing.SnapshotID(args[0])
+	toID := indexing.SnapshotID(args[1])
+
+	diff, err := uc.indexService.DiffSnapshots(ctx, fromID, toID)
+	if err != nil {
+		fmt.Printf("❌ Error: %v\n", err)
+		return
+	}
+
+	printDiffResult(diff, fromID, toID)
+}
+
+// handleIndexScan handles the index scan subcommand.
+func handleIndexScan(ctx context.Context, args []string, uc *useCases) {
+	paths, ignore := parseIndexScanArgs(args)
+
+	fmt.Printf("🔍 Scanning %d path(s)...\n", len(paths))
+	snapshot, err := uc.indexService.Scan(ctx, paths, ignore)
+	if err != nil {
+		fmt.Printf("❌ Error: %v\n", err)
+		return
+	}
+
+	fmt.Println()
+	fmt.Println("✅ Scan complete!")
+	fmt.Println("------------------------------------------")
+	fmt.Printf("Snapshot ID:   %s\n", snapshot.ID)
+	fmt.Printf("Files indexed: %d\n", snapshot.FileCount())
+	fmt.Printf("Created at:    %s\n", snapshot.CreatedAt.Format(time.RFC3339))
+	fmt.Println()
+}
+
+// printIndexUsage prints index command usage information.
+func printIndexUsage() {
+	fmt.Println("Usage: index <scan|changed|diff> [args...]")
+	fmt.Println("  index scan [paths...] [-- ignore...]  - Scan directories and create a snapshot")
+	fmt.Println("  index changed [since]                 - Show files changed since timestamp/duration")
+	fmt.Println("  index diff <from_id> <to_id>          - Compare two snapshots")
+	fmt.Println()
+	fmt.Println("Examples:")
+	fmt.Println("  index scan                            - Scan current directory")
+	fmt.Println("  index scan ./src ./lib                - Scan specific directories")
+	fmt.Println("  index scan . -- .git node_modules     - Scan with custom ignore patterns")
+	fmt.Println("  index changed 1h                      - Files changed in last hour")
+	fmt.Println("  index changed 2024-01-15T10:00:00Z    - Files changed since timestamp")
+	fmt.Println("  index diff snap-123 snap-456          - Compare snapshots")
+	fmt.Println()
 }
 
 // handleMemoryCommand handles memory subcommands.
@@ -271,8 +387,63 @@ func printAgentStats(uc *chatting.GetAgentStatsUseCase) {
 	fmt.Println()
 }
 
+// parseIndexScanArgs parses arguments for the index scan command.
+// Returns paths and ignore patterns.
+func parseIndexScanArgs(args []string) ([]string, []string) {
+	var paths, ignore []string
+
+	// Parse arguments: paths before --, ignore patterns after --
+	inIgnore := false
+	for _, arg := range args {
+		if arg == "--" {
+			inIgnore = true
+			continue
+		}
+		if inIgnore {
+			ignore = append(ignore, arg)
+		} else {
+			paths = append(paths, arg)
+		}
+	}
+
+	// Default to current directory if no paths specified
+	if len(paths) == 0 {
+		cwd, _ := os.Getwd()
+		paths = []string{cwd}
+	}
+
+	// Default ignore patterns
+	if len(ignore) == 0 {
+		ignore = []string{".git", "node_modules", "vendor", "__pycache__", ".DS_Store"}
+	}
+
+	return paths, ignore
+}
+
+// parseSinceTime parses a time string for the index changed command.
+// Returns zero time if parsing fails (after printing error).
+func parseSinceTime(args []string) time.Time {
+	if len(args) == 0 {
+		// Default to 24 hours ago
+		return time.Now().Add(-24 * time.Hour)
+	}
+
+	// Try RFC3339 format first
+	if parsed, err := time.Parse(time.RFC3339, args[0]); err == nil {
+		return parsed
+	}
+
+	// Try duration format (e.g., "1h", "24h")
+	if duration, err := time.ParseDuration(args[0]); err == nil {
+		return time.Now().Add(-duration)
+	}
+
+	fmt.Printf("❌ Invalid time format. Use RFC3339 (e.g., 2024-01-15T10:00:00Z) or duration (e.g., 1h, 24h)\n")
+	return time.Time{}
+}
+
 // printBanner displays the startup banner.
-func printBanner(baseURL, model string, maxIter, maxMsg int, memoryFile string, parallelTools bool) {
+func printBanner(baseURL, model string, maxIter, maxMsg int, memoryFile, indexFile string, parallelTools bool) {
 	fmt.Println("🤖 Go Agent Demo - Full Feature Showcase")
 	fmt.Println("========================================")
 	fmt.Printf("LLM Endpoint:    %s\n", baseURL)
@@ -284,9 +455,63 @@ func printBanner(baseURL, model string, maxIter, maxMsg int, memoryFile string, 
 	} else {
 		fmt.Println("Memory:          in-memory (ephemeral)")
 	}
+	if indexFile != "" {
+		fmt.Printf("Index file:      %s\n", indexFile)
+	} else {
+		fmt.Println("Index:           in-memory (ephemeral)")
+	}
 	fmt.Printf("Parallel tools:  %v\n", parallelTools)
 	fmt.Println()
 	fmt.Println("Type 'help' for available commands.")
+	fmt.Println()
+}
+
+// printChangedFiles displays changed files since a timestamp.
+func printChangedFiles(files []indexing.FileInfo, since time.Time) {
+	fmt.Println()
+	fmt.Printf("📁 Files changed since %s\n", since.Format(time.RFC3339))
+	fmt.Println("------------------------------------------")
+	if len(files) == 0 {
+		fmt.Println("No files changed.")
+	} else {
+		for _, f := range files {
+			fmt.Printf("  %s (%d bytes, %s)\n", f.Path, f.Size, f.ModTime.Format(time.RFC3339))
+		}
+		fmt.Printf("\nTotal: %d file(s)\n", len(files))
+	}
+	fmt.Println()
+}
+
+// printDiffResult displays the diff between two snapshots.
+func printDiffResult(diff indexing.DiffResult, fromID, toID indexing.SnapshotID) {
+	fmt.Println()
+	fmt.Printf("📊 Diff: %s → %s\n", fromID, toID)
+	fmt.Println("------------------------------------------")
+
+	if len(diff.Added) > 0 {
+		fmt.Printf("\n✅ Added (%d):\n", len(diff.Added))
+		for _, f := range diff.Added {
+			fmt.Printf("  + %s\n", f.Path)
+		}
+	}
+
+	if len(diff.Changed) > 0 {
+		fmt.Printf("\n📝 Changed (%d):\n", len(diff.Changed))
+		for _, f := range diff.Changed {
+			fmt.Printf("  ~ %s\n", f.Path)
+		}
+	}
+
+	if len(diff.Removed) > 0 {
+		fmt.Printf("\n❌ Removed (%d):\n", len(diff.Removed))
+		for _, f := range diff.Removed {
+			fmt.Printf("  - %s\n", f.Path)
+		}
+	}
+
+	if len(diff.Added) == 0 && len(diff.Changed) == 0 && len(diff.Removed) == 0 {
+		fmt.Println("No differences found.")
+	}
 	fmt.Println()
 }
 
@@ -307,6 +532,7 @@ func printHelp() {
 	fmt.Println("---------------------")
 	fmt.Println("  clear              Clear conversation history")
 	fmt.Println("  help               Show this help message")
+	fmt.Println("  index <subcmd>     Index operations (scan, changed, diff)")
 	fmt.Println("  memory <subcmd>    Memory operations (search, get, write, delete)")
 	fmt.Println("  quit / exit        Exit the CLI")
 	fmt.Println("  stats              Show agent statistics")
@@ -316,6 +542,8 @@ func printHelp() {
 	fmt.Println("  - Ask for the time: 'What time is it?'")
 	fmt.Println("  - Save to memory: 'Remember that my favorite color is blue'")
 	fmt.Println("  - Recall memory: 'What is my favorite color?'")
+	fmt.Println("  - Scan files: 'index scan ./src' or ask 'Scan my project directory'")
+	fmt.Println("  - Find changes: 'index changed 1h' or ask 'What files changed today?'")
 	fmt.Println()
 }
 
@@ -410,19 +638,28 @@ func runInteractiveChat(uc *useCases, verbose bool) {
 }
 
 // setupInfrastructure creates and wires all infrastructure components.
-func setupInfrastructure(baseURL, model, memoryFile string, verbose, parallelTools bool) *infrastructure {
+func setupInfrastructure(baseURL, model, memoryFile, indexFile string, verbose, parallelTools bool) *infrastructure {
 	logger := createLogger(verbose)
 	dispatcher := messaging.NewExternalDispatcher()
 	publisher := outbound.NewEventPublisher(dispatcher)
 	memoryStore := createMemoryStore(memoryFile)
 	memoryToolSvc := tooling.NewMemoryToolService(memoryStore, generateNoteID)
-	toolExecutor := createToolExecutor(verbose, logger, memoryToolSvc)
+
+	// Create indexing infrastructure
+	indexStore := createIndexStore(indexFile)
+	fileWalker := inbound.NewFSWalker()
+	indexService := indexing.NewService(fileWalker, indexStore, generateSnapshotID)
+	indexToolSvc := tooling.NewIndexToolService(indexService)
+
+	toolExecutor := createToolExecutor(verbose, logger, memoryToolSvc, indexToolSvc)
 	llmClient := createLLMClient(baseURL, model, verbose, logger)
 	hooks := createHooks(verbose)
 	taskService := createTaskService(llmClient, toolExecutor, publisher, hooks, parallelTools)
 
 	return &infrastructure{
 		dispatcher:    dispatcher,
+		indexService:  indexService,
+		indexToolSvc:  indexToolSvc,
 		llmClient:     llmClient,
 		logger:        logger,
 		memoryStore:   memoryStore,
@@ -483,6 +720,14 @@ func createLogger(verbose bool) *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
+// createIndexStore creates either a file-backed or in-memory index store.
+func createIndexStore(indexFile string) *outbound.IndexStore {
+	if indexFile != "" {
+		return outbound.NewIndexStore(indexFile)
+	}
+	return outbound.NewInMemoryIndexStore()
+}
+
 // createMemoryStore creates either a file-backed or in-memory store.
 func createMemoryStore(memoryFile string) *outbound.MemoryStore {
 	if memoryFile != "" {
@@ -507,17 +752,22 @@ func createTaskService(
 }
 
 // createToolExecutor creates and configures the tool executor with all tools.
-func createToolExecutor(verbose bool, logger *slog.Logger, memoryToolSvc *tooling.MemoryToolService) *outbound.ToolExecutor {
+func createToolExecutor(verbose bool, logger *slog.Logger, memoryToolSvc *tooling.MemoryToolService, indexToolSvc *tooling.IndexToolService) *outbound.ToolExecutor {
 	executor := outbound.NewToolExecutor()
 	if verbose && logger != nil {
 		executor = executor.WithLogger(logger)
 	}
-	registerTools(executor, memoryToolSvc)
+	registerTools(executor, memoryToolSvc, indexToolSvc)
 	return executor
 }
 
+// generateSnapshotID creates a unique snapshot ID.
+func generateSnapshotID() string {
+	return fmt.Sprintf("snap-%d", time.Now().UnixNano())
+}
+
 // registerTools registers all available tools with the executor.
-func registerTools(executor *outbound.ToolExecutor, memoryToolSvc *tooling.MemoryToolService) {
+func registerTools(executor *outbound.ToolExecutor, memoryToolSvc *tooling.MemoryToolService, indexToolSvc *tooling.IndexToolService) {
 	// Register calculate tool
 	calculateTool := tooling.NewCalculateTool()
 	executor.RegisterTool(string(calculateTool.ID), calculateTool.Func)
@@ -527,6 +777,21 @@ func registerTools(executor *outbound.ToolExecutor, memoryToolSvc *tooling.Memor
 	timeTool := tooling.NewGetCurrentTimeTool()
 	executor.RegisterTool(string(timeTool.ID), timeTool.Func)
 	executor.RegisterToolDefinition(timeTool.Definition)
+
+	// Register index.changed_since tool
+	indexChangedSinceTool := tooling.NewIndexChangedSinceTool(indexToolSvc)
+	executor.RegisterTool(string(indexChangedSinceTool.ID), indexChangedSinceTool.Func)
+	executor.RegisterToolDefinition(indexChangedSinceTool.Definition)
+
+	// Register index.diff_snapshot tool
+	indexDiffSnapshotTool := tooling.NewIndexDiffSnapshotTool(indexToolSvc)
+	executor.RegisterTool(string(indexDiffSnapshotTool.ID), indexDiffSnapshotTool.Func)
+	executor.RegisterToolDefinition(indexDiffSnapshotTool.Definition)
+
+	// Register index.scan tool
+	indexScanTool := tooling.NewIndexScanTool(indexToolSvc)
+	executor.RegisterTool(string(indexScanTool.ID), indexScanTool.Func)
+	executor.RegisterToolDefinition(indexScanTool.Definition)
 
 	// Register memory_get tool
 	memoryGetTool := tooling.NewMemoryGetTool(memoryToolSvc)

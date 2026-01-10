@@ -129,6 +129,7 @@ The project follows **hexagonal architecture** (ports and adapters) with domain-
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │ agent/        Core aggregate, task service, types           ││
 │  │ chatting/     Use cases: SendMessage, ClearConversation     ││
+│  │ indexing/     Use cases: Scan, ChangedSince, DiffSnapshots  ││
 │  │ memorizing/   Use cases: WriteNote, SearchNotes             ││
 │  │ tooling/      Tool implementations                          ││
 │  │ openai/       OpenAI API types (request, response, tool)    ││
@@ -136,12 +137,11 @@ The project follows **hexagonal architecture** (ports and adapters) with domain-
 └──────────────────────────────┬──────────────────────────────────┘
                                │ depends on interfaces (ports)
 ┌──────────────────────────────▼──────────────────────────────────┐
-│                   internal/adapters/outbound                    │
+│                    internal/adapters                            │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │ openai_client.go    LLMClient implementation                ││
-│  │ tool_executor.go    ToolExecutor implementation             ││
-│  │ event_publisher.go  EventPublisher implementation           ││
-│  │ memory_store.go     MemoryStore implementation              ││
+│  │ inbound/         FSWalker (file system traversal)           ││
+│  │ outbound/        LLMClient, ToolExecutor, EventPublisher,   ││
+│  │                  MemoryStore, IndexStore implementations    ││
 │  └─────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -168,6 +168,9 @@ For detailed architecture documentation, see [CONTEXT.md](CONTEXT.md).
 |------|-------------|
 | `calculate` | Safe arithmetic expression evaluator with operator precedence |
 | `get_current_time` | Returns current date and time in RFC3339 format |
+| `index.changed_since` | Find files modified after a given timestamp |
+| `index.diff_snapshot` | Compare two snapshots to find added/changed/removed files |
+| `index.scan` | Scan directories and create a file system snapshot |
 | `memory_get` | Retrieve a specific memory note by ID |
 | `memory_search` | Search memory notes with query and filters |
 | `memory_write` | Store a new memory note with metadata |
@@ -236,6 +239,13 @@ go run ./cmd/cli [flags]
 | Command | Description |
 |---------|-------------|
 | `clear` | Reset conversation history |
+| `help` | Show available commands |
+| `index changed [since]` | Find files changed since timestamp/duration (default: 24h) |
+| `index diff <from> <to>` | Compare two snapshots |
+| `index scan [paths...]` | Scan directories (default: current directory) |
+| `memory get <id>` | Retrieve a memory note by ID |
+| `memory search <query>` | Search memory notes |
+| `memory write <content>` | Store a new memory note |
 | `quit` / `exit` | Exit the CLI |
 | `stats` | Show agent statistics |
 
@@ -243,9 +253,12 @@ go run ./cmd/cli [flags]
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `-index-file` | `""` | JSON file for persistent indexing (empty = in-memory) |
 | `-max-iterations` | `10` | Max iterations per task |
 | `-max-messages` | `50` | Max messages to retain (0 = unlimited) |
+| `-memory-file` | `""` | JSON file for persistent memory (empty = in-memory) |
 | `-model` | `$LM_STUDIO_MODEL` | Model name |
+| `-parallel-tools` | `false` | Execute tools in parallel |
 | `-url` | `http://localhost:1234` | LLM API base URL |
 | `-verbose` | `false` | Show detailed metrics |
 
@@ -381,14 +394,21 @@ The CLI benchmarks (`cmd/cli/main_test.go`) cover all domain contexts:
 
 | Category | Description |
 |----------|-------------|
+| `Benchmark_FSWalker_*` | Real file system walking |
 | `Benchmark_FullStack_*` | End-to-end agent with tools |
+| `Benchmark_IndexingService_*` | Scan/ChangedSince/DiffSnapshots at 100/1000/10000 files |
+| `Benchmark_IndexStore_*` | Snapshot save/get operations |
+| `Benchmark_IndexToolService_*` | Tool-based indexing operations |
 | `Benchmark_MemoryNote_*` | MemoryNote object creation/methods |
 | `Benchmark_MemoryStore_*` | Raw store ops at 100/1000/10000 notes |
 | `Benchmark_MemoryTools_*` | Tool-based memory operations |
 | `Benchmark_MemorizingService_*` | Complete memory workflow |
 | `Benchmark_*NoteUseCase` | Domain use case benchmarks |
+| `Benchmark_NewFileInfo` | FileInfo object creation |
+| `Benchmark_NewSnapshot` | Snapshot object creation |
 | `Benchmark_RealToolExecutor_*` | calculate, time tools |
 | `Benchmark_SendMessageUseCase_*` | Chat use case execution |
+| `Benchmark_Snapshot_*` | Snapshot method performance |
 | `Benchmark_TaskService_*` | Task service with hooks/parallelism |
 
 ---
@@ -399,19 +419,24 @@ The CLI benchmarks (`cmd/cli/main_test.go`) cover all domain contexts:
 go-agent/
 ├── cmd/cli/                # CLI application
 ├── internal/
-│   ├── adapters/outbound/  # Infrastructure implementations
-│   │   ├── conversation_store.go       # ConversationStore → resource.Access
-│   │   ├── encrypted_conversation_store.go # AES-GCM encrypted variant
-│   │   ├── event_publisher.go          # EventPublisher → messaging.Dispatcher
-│   │   ├── memory_store.go             # MemoryStore → resource.Access
-│   │   ├── openai_client.go            # LLMClient → OpenAI-compatible API
-│   │   └── tool_executor.go            # ToolExecutor → tool registry
+│   ├── adapters/
+│   │   ├── inbound/        # Inbound adapters (data sources)
+│   │   │   └── file_walker.go          # FileWalker → filesystem traversal
+│   │   └── outbound/       # Outbound adapters (infrastructure)
+│   │       ├── conversation_store.go       # ConversationStore → resource.Access
+│   │       ├── encrypted_conversation_store.go # AES-GCM encrypted variant
+│   │       ├── event_publisher.go          # EventPublisher → messaging.Dispatcher
+│   │       ├── index_store.go              # IndexStore → resource.Access
+│   │       ├── memory_store.go             # MemoryStore → resource.Access
+│   │       ├── openai_client.go            # LLMClient → OpenAI-compatible API
+│   │       └── tool_executor.go            # ToolExecutor → tool registry
 │   └── domain/
 │       ├── agent/          # Core domain (Agent, Task, Message, Hooks, Events)
 │       ├── chatting/       # Chat use cases (SendMessage, ClearConversation, GetAgentStats)
+│       ├── indexing/       # File indexing (Scan, ChangedSince, DiffSnapshots)
 │       ├── memorizing/     # Memory use cases (WriteNote, GetNote, SearchNotes, DeleteNote)
 │       ├── openai/         # OpenAI API types (Request, Response, Tool)
-│       └── tooling/        # Tool implementations (calculate, time, memory_tools)
+│       └── tooling/        # Tool implementations (calculate, time, memory, index)
 ├── AGENTS.md               # AI agent definitions
 ├── CONTEXT.md              # Architecture documentation
 ├── Dockerfile
