@@ -2106,3 +2106,104 @@ func Test_generateSnapshotID_Should_ReturnUniqueIDs(t *testing.T) {
 		t.Error("Expected ID to have timestamp suffix")
 	}
 }
+
+// Test_parseMemoryFlags_WithNoArgs_Should_DefaultImportanceToZero verifies
+// that search operations don't filter by importance by default.
+func Test_parseMemoryFlags_WithNoArgs_Should_DefaultImportanceToZero(t *testing.T) {
+	flags := parseMemoryFlags([]string{})
+
+	if flags.importance != 0 {
+		t.Errorf("Expected default importance 0, got %d", flags.importance)
+	}
+}
+
+// Test_parseMemoryFlags_WithQuery_Should_PutQueryInRemaining verifies
+// that non-flag arguments are collected in remaining.
+func Test_parseMemoryFlags_WithQuery_Should_PutQueryInRemaining(t *testing.T) {
+	flags := parseMemoryFlags([]string{"banana", "apple"})
+
+	if len(flags.remaining) != 2 {
+		t.Fatalf("Expected 2 remaining args, got %d", len(flags.remaining))
+	}
+	if flags.remaining[0] != "banana" || flags.remaining[1] != "apple" {
+		t.Errorf("Expected [banana apple], got %v", flags.remaining)
+	}
+}
+
+// Test_parseMemoryFlags_WithImportanceFlag_Should_SetImportance verifies
+// that --min-importance flag is correctly parsed.
+func Test_parseMemoryFlags_WithImportanceFlag_Should_SetImportance(t *testing.T) {
+	flags := parseMemoryFlags([]string{"--min-importance", "5", "query"})
+
+	if flags.importance != 5 {
+		t.Errorf("Expected importance 5, got %d", flags.importance)
+	}
+	if len(flags.remaining) != 1 || flags.remaining[0] != "query" {
+		t.Errorf("Expected remaining [query], got %v", flags.remaining)
+	}
+}
+
+// Test_buildSearchOptions_WithNoFilters_Should_ReturnNil verifies that
+// search without filters returns nil (no filtering applied).
+func Test_buildSearchOptions_WithNoFilters_Should_ReturnNil(t *testing.T) {
+	flags := memoryFlags{
+		importance: 0,
+	}
+
+	opts := buildSearchOptions(flags)
+
+	if opts != nil {
+		t.Error("Expected nil options when no filters specified")
+	}
+}
+
+// Test_buildSearchOptions_WithImportance_Should_ReturnOptions verifies
+// that specifying importance creates filter options.
+func Test_buildSearchOptions_WithImportance_Should_ReturnOptions(t *testing.T) {
+	flags := memoryFlags{
+		importance: 3,
+	}
+
+	opts := buildSearchOptions(flags)
+
+	if opts == nil {
+		t.Fatal("Expected non-nil options")
+	}
+	if opts.MinImportance != 3 {
+		t.Errorf("Expected MinImportance 3, got %d", opts.MinImportance)
+	}
+}
+
+// Test_buildSearchOptions_WithSourceTypes_Should_ReturnOptions verifies
+// that specifying source types creates filter options.
+func Test_buildSearchOptions_WithSourceTypes_Should_ReturnOptions(t *testing.T) {
+	flags := memoryFlags{
+		sourceTypes: []agent.SourceType{agent.SourceTypePreference},
+	}
+
+	opts := buildSearchOptions(flags)
+
+	if opts == nil {
+		t.Fatal("Expected non-nil options")
+	}
+	if len(opts.SourceTypes) != 1 || opts.SourceTypes[0] != agent.SourceTypePreference {
+		t.Errorf("Expected [preference], got %v", opts.SourceTypes)
+	}
+}
+
+// Test_buildSearchOptions_WithTags_Should_ReturnOptions verifies
+// that specifying tags creates filter options.
+func Test_buildSearchOptions_WithTags_Should_ReturnOptions(t *testing.T) {
+	flags := memoryFlags{
+		tags: []string{"food", "preferences"},
+	}
+
+	opts := buildSearchOptions(flags)
+
+	if opts == nil {
+		t.Fatal("Expected non-nil options")
+	}
+	if len(opts.Tags) != 2 {
+		t.Errorf("Expected 2 tags, got %d", len(opts.Tags))
+	}
+}

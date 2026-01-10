@@ -328,13 +328,15 @@ go run ./cmd/cli [flags]
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `-chatting-model` | `$OPENAI_CHAT_MODEL` | Model name |
+| `-chatting-url` | `http://localhost:1234` | OpenAI-compatible API base URL |
+| `-embedding-model` | `$OPENAI_EMBED_MODEL` | Embedding model name (empty = no embeddings) |
+| `-embedding-url` | `$OPENAI_EMBED_URL` or `http://localhost:1234` | Embedding API URL |
 | `-index-file` | `""` | JSON file for persistent indexing (empty = in-memory) |
 | `-max-iterations` | `10` | Max iterations per task |
 | `-max-messages` | `50` | Max messages to retain (0 = unlimited) |
 | `-memory-file` | `""` | JSON file for persistent memory (empty = in-memory) |
-| `-model` | `$LM_STUDIO_MODEL` | Model name |
 | `-parallel-tools` | `false` | Execute tools in parallel |
-| `-url` | `http://localhost:1234` | LLM API base URL |
 | `-verbose` | `false` | Show detailed metrics |
 
 ---
@@ -445,11 +447,15 @@ docker-compose up -d
 ## Testing
 
 ```bash
-# Run all tests
+# Run all tests (~2s)
 go test ./...
 
 # Run with coverage
 go test -cover ./...
+
+# Run integration tests (requires LM Studio or compatible server)
+OPENAI_CHAT_MODEL="your-model" OPENAI_CHAT_URL="http://localhost:1234" \
+  go test -tags=integration ./...
 
 # Run all benchmarks (PGO profiling)
 go test -bench=. ./cmd/cli/...
@@ -461,6 +467,15 @@ go test -bench=TaskService ./cmd/cli/...      # Task service benchmarks
 
 # Run benchmarks with custom time
 go test -bench=. -benchtime=1s ./cmd/cli/...
+```
+
+### Integration Tests
+
+Integration tests are guarded by the `//go:build integration` build tag and require:
+- A running LM Studio (or compatible) server
+- Environment variables: `OPENAI_CHAT_MODEL`, `OPENAI_CHAT_URL`, `OPENAI_EMBED_MODEL`, `OPENAI_EMBED_URL`
+
+Without `-tags=integration`, these tests are excluded from the build.
 ```
 
 ### Benchmark Categories

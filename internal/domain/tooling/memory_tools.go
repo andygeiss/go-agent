@@ -52,10 +52,11 @@ type memorySearchResult struct {
 // MemoryToolService provides memory tool implementations.
 // It requires a MemoryStore to be injected for actual storage.
 type MemoryToolService struct {
-	idGen   func() string
-	session string
-	store   agent.MemoryStore
-	userID  string
+	embedder agent.EmbeddingClient
+	idGen    func() string
+	session  string
+	store    agent.MemoryStore
+	userID   string
 }
 
 // NewMemoryToolService creates a new memory tool service.
@@ -177,22 +178,49 @@ func (s *MemoryToolService) MemoryWrite(ctx context.Context, arguments string) (
 		return "", fmt.Errorf("failed to parse arguments: %w", err)
 	}
 
-	// Map source type string to SourceType
-	sourceType := mapSourceType(args.SourceType)
+	note := s.buildNote(args)
+	s.applyEmbedding(ctx, note)
 
-	// Generate unique ID
-	noteID := agent.NoteID(s.idGen())
+	if err := s.store.Write(ctx, note); err != nil {
+		return "", fmt.Errorf("failed to write memory note: %w", err)
+	}
 
-	// Create the note
-	note := agent.NewMemoryNote(noteID, sourceType).
-		WithRawContent(args.RawContent).
-		WithSummary(args.Summary).
-		WithContextDescription(args.ContextDescription).
-		WithKeywords(args.Keywords...).
-		WithTags(args.Tags...).
-		WithImportance(args.Importance)
+	return fmt.Sprintf(`{"status": "success", "note_id": "%s"}`, note.ID), nil
+}
 
-	// Apply scope IDs (prefer explicit args over defaults)
+// WithEmbedder sets the embedding client for generating note embeddings.
+// If set, embeddings will be generated automatically when writing notes.
+func (s *MemoryToolService) WithEmbedder(embedder agent.EmbeddingClient) *MemoryToolService {
+	s.embedder = embedder
+	return s
+}
+
+// WithSessionID sets the default session ID for notes.
+func (s *MemoryToolService) WithSessionID(sessionID string) *MemoryToolService {
+	s.session = sessionID
+	return s
+}
+
+// WithUserID sets the default user ID for notes.
+func (s *MemoryToolService) WithUserID(userID string) *MemoryToolService {
+	s.userID = userID
+	return s
+}
+
+// applyEmbedding generates and attaches an embedding to the note if configured.
+func (s *MemoryToolService) applyEmbedding(ctx context.Context, note *agent.MemoryNote) {
+	if s.embedder == nil {
+		return
+	}
+	embedding, err := s.embedder.Embed(ctx, note.SearchableText())
+	if err == nil && len(embedding) > 0 {
+		note.WithEmbedding(embedding)
+	}
+	// Silently skip embedding on error - note is still useful without it
+}
+
+// applyScopeIDs sets user, session, and task IDs on the note.
+func (s *MemoryToolService) applyScopeIDs(note *agent.MemoryNote, args memoryWriteArgs) {
 	if args.UserID != "" {
 		note.WithUserID(args.UserID)
 	} else if s.userID != "" {
@@ -208,25 +236,23 @@ func (s *MemoryToolService) MemoryWrite(ctx context.Context, arguments string) (
 	if args.TaskID != "" {
 		note.WithTaskID(args.TaskID)
 	}
-
-	// Store the note
-	if err := s.store.Write(ctx, note); err != nil {
-		return "", fmt.Errorf("failed to write memory note: %w", err)
-	}
-
-	return fmt.Sprintf(`{"status": "success", "note_id": "%s"}`, noteID), nil
 }
 
-// WithSessionID sets the default session ID for notes.
-func (s *MemoryToolService) WithSessionID(sessionID string) *MemoryToolService {
-	s.session = sessionID
-	return s
-}
+// buildNote creates a MemoryNote from write arguments.
+func (s *MemoryToolService) buildNote(args memoryWriteArgs) *agent.MemoryNote {
+	noteID := agent.NoteID(s.idGen())
+	sourceType := mapSourceType(args.SourceType)
 
-// WithUserID sets the default user ID for notes.
-func (s *MemoryToolService) WithUserID(userID string) *MemoryToolService {
-	s.userID = userID
-	return s
+	note := agent.NewMemoryNote(noteID, sourceType).
+		WithRawContent(args.RawContent).
+		WithSummary(args.Summary).
+		WithContextDescription(args.ContextDescription).
+		WithKeywords(args.Keywords...).
+		WithTags(args.Tags...).
+		WithImportance(args.Importance)
+
+	s.applyScopeIDs(note, args)
+	return note
 }
 
 // mapSourceType maps a string to a SourceType.

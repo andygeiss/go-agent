@@ -41,21 +41,27 @@ Be concise, helpful, and proactive about using your memory and indexing capabili
 
 func main() {
 	// Parse command line flags (alphabetically sorted)
-	baseURL := flag.String("url", "http://localhost:1234", "LM Studio API base URL")
+	chattingModel := flag.String("chatting-model", os.Getenv("OPENAI_CHAT_MODEL"), "Model name to use")
+	chattingURL := flag.String("chatting-url", "http://localhost:1234", "OpenAI API base URL")
+	embeddingModel := flag.String("embedding-model", os.Getenv("OPENAI_EMBED_MODEL"), "Embedding model name (empty = no embeddings)")
+	embeddingURL := flag.String("embedding-url", getEnvOrDefault("OPENAI_EMBED_URL", "http://localhost:1234"), "Embedding API URL (defaults to -chatting-url if not set)")
 	indexFile := flag.String("index-file", "", "JSON file for persistent indexing (empty = in-memory)")
 	maxIterations := flag.Int("max-iterations", 10, "Maximum iterations per task")
 	maxMessages := flag.Int("max-messages", 50, "Maximum messages to retain (0 = unlimited)")
 	memoryFile := flag.String("memory-file", "", "JSON file for persistent memory (empty = in-memory)")
-	model := flag.String("model", os.Getenv("LM_STUDIO_MODEL"), "Model name to use")
 	parallelTools := flag.Bool("parallel-tools", false, "Enable parallel tool execution")
 	verbose := flag.Bool("verbose", false, "Show detailed metrics after each response")
 	flag.Parse()
 
 	// Print banner
-	printBanner(*baseURL, *model, *maxIterations, *maxMessages, *memoryFile, *indexFile, *parallelTools)
+	embURL := *embeddingURL
+	if embURL == "" {
+		embURL = *chattingURL
+	}
+	printBanner(*chattingURL, *chattingModel, embURL, *embeddingModel, *maxIterations, *maxMessages, *memoryFile, *indexFile, *parallelTools)
 
 	// Setup infrastructure
-	infrastructure := setupInfrastructure(*baseURL, *model, *memoryFile, *indexFile, *verbose, *parallelTools)
+	infrastructure := setupInfrastructure(*chattingURL, *chattingModel, *memoryFile, *indexFile, *verbose, *parallelTools, embURL, *embeddingModel)
 
 	// Create the agent with options
 	agentInstance := agent.NewAgent(
@@ -65,7 +71,7 @@ func main() {
 		agent.WithMaxMessages(*maxMessages),
 		agent.WithMetadata(agent.Metadata{
 			"created_by": "cli",
-			"model":      *model,
+			"model":      *chattingModel,
 			"session_id": fmt.Sprintf("session-%d", time.Now().Unix()),
 		}),
 	)
@@ -140,26 +146,44 @@ type memoryFlags struct {
 func parseMemoryFlags(args []string) memoryFlags {
 	var flags memoryFlags
 	flags.sourceType = agent.SourceTypeUserMessage
-	flags.importance = 3
+	flags.importance = 0 // Default 0 means "no filter" for search; write applies default 3 separately
 
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "--source-type" && i+1 < len(args):
-			i++
-			flags.sourceType = agent.ParseSourceType(args[i])
-			flags.sourceTypes = parseSourceTypeList(args[i])
-		case (arg == "--min-importance" || arg == "--importance") && i+1 < len(args):
-			i++
-			_, _ = fmt.Sscanf(args[i], "%d", &flags.importance)
-		case arg == "--tags" && i+1 < len(args):
-			i++
-			flags.tags = parseTagList(args[i])
-		default:
+	skip := false
+	for i, arg := range args {
+		if skip {
+			skip = false
+			continue
+		}
+		if handled, shouldSkip := parseMemoryFlag(&flags, args, i, arg); handled {
+			skip = shouldSkip
+		} else {
 			flags.remaining = append(flags.remaining, arg)
 		}
 	}
 	return flags
+}
+
+// parseMemoryFlag handles a single flag argument.
+// Returns (handled, skipNext).
+func parseMemoryFlag(flags *memoryFlags, args []string, i int, arg string) (bool, bool) {
+	if i+1 >= len(args) {
+		return false, false
+	}
+	val := args[i+1]
+	switch arg {
+	case "--source-type":
+		flags.sourceType = agent.ParseSourceType(val)
+		flags.sourceTypes = parseSourceTypeList(val)
+		return true, true
+	case "--min-importance", "--importance":
+		_, _ = fmt.Sscanf(val, "%d", &flags.importance)
+		return true, true
+	case "--tags":
+		flags.tags = parseTagList(val)
+		return true, true
+	default:
+		return false, false
+	}
 }
 
 // parseSourceTypeList parses a comma-separated list of source types.
@@ -185,6 +209,14 @@ func parseTagList(s string) []string {
 // generateNoteID creates a unique note ID.
 func generateNoteID() string {
 	return fmt.Sprintf("note-%d", time.Now().UnixNano())
+}
+
+// getEnvOrDefault returns the environment variable value or a default if not set.
+func getEnvOrDefault(key, defaultVal string) string {
+	if val := os.Getenv(key); val != "" {
+		return val
+	}
+	return defaultVal
 }
 
 // handleCommand processes special commands. Returns (handled, shouldBreak).
@@ -413,10 +445,16 @@ func handleMemoryWrite(ctx context.Context, args []string, uc *useCases) {
 		return
 	}
 
+	// Apply default importance of 3 for writes when not specified
+	importance := flags.importance
+	if importance == 0 {
+		importance = 3
+	}
+
 	note := agent.NewMemoryNote(agent.NoteID(generateNoteID()), flags.sourceType).
 		WithRawContent(content).
 		WithSummary(content).
-		WithImportance(flags.importance)
+		WithImportance(importance)
 
 	if len(flags.tags) > 0 {
 		note.WithTags(flags.tags...)
@@ -541,11 +579,19 @@ func parseSinceTime(args []string) time.Time {
 }
 
 // printBanner displays the startup banner.
-func printBanner(baseURL, model string, maxIter, maxMsg int, memoryFile, indexFile string, parallelTools bool) {
-	fmt.Println("🤖 Go Agent Demo - Full Feature Showcase")
-	fmt.Println("========================================")
-	fmt.Printf("LLM Endpoint:    %s\n", baseURL)
-	fmt.Printf("Model:           %s\n", model)
+func printBanner(chattingURL, chattingModel, embeddingURL, embeddingModel string, maxIter, maxMsg int, memoryFile, indexFile string, parallelTools bool) {
+	appName := getEnvOrDefault("APP_NAME", "Go Agent")
+	appDescription := getEnvOrDefault("APP_DESCRIPTION", "AI Agent CLI")
+	fmt.Printf("🤖 %s - %s\n", appName, appDescription)
+	fmt.Println(strings.Repeat("=", len(appName)+len(appDescription)+6))
+	fmt.Printf("Chatting URL:    %s\n", chattingURL)
+	fmt.Printf("Chatting Model:  %s\n", chattingModel)
+	if embeddingModel != "" {
+		fmt.Printf("Embedding URL:   %s\n", embeddingURL)
+		fmt.Printf("Embedding Model: %s\n", embeddingModel)
+	} else {
+		fmt.Println("Embeddings:      disabled")
+	}
 	fmt.Printf("Max iterations:  %d\n", maxIter)
 	fmt.Printf("Max messages:    %d\n", maxMsg)
 	if memoryFile != "" {
@@ -661,6 +707,11 @@ func printMemoryNote(note *agent.MemoryNote) {
 	if len(note.Keywords) > 0 {
 		fmt.Printf("Keywords:    %s\n", strings.Join(note.Keywords, ", "))
 	}
+	if len(note.Embedding) > 0 {
+		fmt.Printf("Embedding:   [%d dimensions]\n", len(note.Embedding))
+	} else {
+		fmt.Printf("Embedding:   (none)\n")
+	}
 	fmt.Printf("Created:     %s\n", note.CreatedAt.Format(time.RFC3339))
 	fmt.Println()
 }
@@ -736,12 +787,22 @@ func runInteractiveChat(uc *useCases, verbose bool) {
 }
 
 // setupInfrastructure creates and wires all infrastructure components.
-func setupInfrastructure(baseURL, model, memoryFile, indexFile string, verbose, parallelTools bool) *infrastructure {
+func setupInfrastructure(baseURL, model, memoryFile, indexFile string, verbose, parallelTools bool, embeddingURL, embeddingModel string) *infrastructure {
 	logger := createLogger(verbose)
 	dispatcher := messaging.NewExternalDispatcher()
 	publisher := outbound.NewEventPublisher(dispatcher)
 	memoryStore := createMemoryStore(memoryFile)
 	memoryToolSvc := tooling.NewMemoryToolService(memoryStore, generateNoteID)
+
+	// Configure embedding client if model is specified
+	if embeddingModel != "" {
+		embeddingClient := outbound.NewOpenAIEmbeddingClient(embeddingURL).
+			WithModel(embeddingModel)
+		if logger != nil {
+			embeddingClient.WithLogger(logger)
+		}
+		memoryToolSvc.WithEmbedder(embeddingClient)
+	}
 
 	// Create indexing infrastructure
 	indexStore := createIndexStore(indexFile)

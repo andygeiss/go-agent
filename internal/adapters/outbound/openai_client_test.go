@@ -143,7 +143,8 @@ func Test_OpenAIClient_Run_With_EmptyChoices_Should_ReturnError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := outbound.NewOpenAIClient(server.URL, "test-model")
+	client := outbound.NewOpenAIClient(server.URL, "test-model").
+		WithRetry(0, 0) // Disable retries for fast test execution
 	messages := []agent.Message{
 		agent.NewMessage(agent.RoleUser, "Hello"),
 	}
@@ -163,7 +164,8 @@ func Test_OpenAIClient_Run_With_HTTPError_Should_ReturnError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := outbound.NewOpenAIClient(server.URL, "test-model")
+	client := outbound.NewOpenAIClient(server.URL, "test-model").
+		WithRetry(0, 0) // Disable retries for fast test execution
 	messages := []agent.Message{
 		agent.NewMessage(agent.RoleUser, "Hello"),
 	}
@@ -183,7 +185,8 @@ func Test_OpenAIClient_Run_With_InvalidJSON_Should_ReturnError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := outbound.NewOpenAIClient(server.URL, "test-model")
+	client := outbound.NewOpenAIClient(server.URL, "test-model").
+		WithRetry(0, 0) // Disable retries for fast test execution
 	messages := []agent.Message{
 		agent.NewMessage(agent.RoleUser, "Hello"),
 	}

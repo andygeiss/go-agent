@@ -274,6 +274,22 @@ func Test_Agent_AddTask_With_Task_Should_AddToQueue(t *testing.T) {
 - Test error conditions explicitly
 - Use `b.Loop()` for benchmarks (Go 1.24+)
 - Pre-populate stores before benchmarks with `b.ResetTimer()`
+- Disable retries in error-scenario unit tests with `.WithRetry(0, 0)` for fast execution
+
+**Integration tests:**
+
+Integration tests live in `*_integration_test.go` files and are guarded by `//go:build integration`:
+
+```go
+//go:build integration
+
+package outbound_test
+```
+
+- Require a running LM Studio (or compatible) server
+- Environment variables: `OPENAI_CHAT_MODEL`, `OPENAI_CHAT_URL`, `OPENAI_EMBED_MODEL`, `OPENAI_EMBED_URL`
+- Use `skipIfNoChattingModel(t)` / `skipIfNoEmbeddingModel(t)` helpers for graceful skipping
+- Run with: `go test -tags=integration ./...`
 
 ### 5.5 Formatting & linting
 
@@ -647,20 +663,22 @@ go build -ldflags "-s -w" -pgo cpuprofile.pprof -o go-agent ./cmd/cli
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `-chatting-model` | `$OPENAI_CHAT_MODEL` | Chat model name |
+| `-chatting-url` | `http://localhost:1234` | OpenAI-compatible API base URL |
+| `-embedding-model` | `$OPENAI_EMBED_MODEL` | Embedding model name (empty = no embeddings) |
+| `-embedding-url` | `$OPENAI_EMBED_URL` or `http://localhost:1234` | Embedding API URL |
 | `-index-file` | `""` | JSON file for persistent indexing (empty = in-memory) |
 | `-max-iterations` | `10` | Max iterations per task |
 | `-max-messages` | `50` | Max messages to retain (0 = unlimited) |
 | `-memory-file` | `""` | JSON file for persistent memory (empty = in-memory) |
-| `-model` | `$LM_STUDIO_MODEL` | Model name |
 | `-parallel-tools` | `false` | Execute tools in parallel |
-| `-url` | `http://localhost:1234` | LM Studio API base URL |
 | `-verbose` | `false` | Show detailed metrics |
 
 ### Development
 
 ```bash
-# Run CLI with LM Studio
-go run ./cmd/cli -url http://localhost:1234 -model <model-name>
+# Run CLI with LM Studio (or any OpenAI-compatible server)
+go run ./cmd/cli -chatting-model <model-name>
 
 # Run tests
 go test ./...

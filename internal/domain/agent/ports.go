@@ -17,6 +17,13 @@ type ConversationStore interface {
 	Save(ctx context.Context, agentID AgentID, messages []Message) error
 }
 
+// EmbeddingClient is the interface for generating text embeddings.
+// Implementations call embedding APIs (e.g., OpenAI text-embedding-3-small).
+type EmbeddingClient interface {
+	// Embed generates an embedding vector for the given text.
+	Embed(ctx context.Context, text string) (Embedding, error)
+}
+
 // EventPublisher is the interface for publishing domain events.
 type EventPublisher interface {
 	// Publish sends an event to subscribers.

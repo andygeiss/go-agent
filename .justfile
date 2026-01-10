@@ -148,8 +148,8 @@ test:
 # These tests are tagged with //go:build integration and are skipped by default
 #
 # Requirements:
-# - LM Studio must be running locally (default: http://localhost:1234)
-# - Set LM_STUDIO_URL and LM_STUDIO_MODEL in .env or environment
+# - LM Studio (or OpenAI-compatible server) must be running locally (default: http://localhost:1234)
+# - Set OPENAI_CHAT_URL, OPENAI_CHAT_MODEL, OPENAI_EMBED_URL, OPENAI_EMBED_MODEL in .env or environment
 #
 # Usage:
 #   just test-integration                    # Run all integration tests
@@ -157,8 +157,10 @@ test:
 
 test-integration *ARGS='./internal/...':
     @echo "Running integration tests..."
-    @echo "LM_STUDIO_URL=${LM_STUDIO_URL:-http://localhost:1234}"
-    @echo "LM_STUDIO_MODEL=${LM_STUDIO_MODEL:-default}"
+    @echo "OPENAI_CHAT_URL=${OPENAI_CHAT_URL:-http://localhost:1234}"
+    @echo "OPENAI_CHAT_MODEL=${OPENAI_CHAT_MODEL:-not set}"
+    @echo "OPENAI_EMBED_URL=${OPENAI_EMBED_URL:-http://localhost:1234}"
+    @echo "OPENAI_EMBED_MODEL=${OPENAI_EMBED_MODEL:-not set}"
     @echo ""
     @go test -tags=integration -v {{ ARGS }}
 

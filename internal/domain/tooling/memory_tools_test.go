@@ -405,3 +405,160 @@ func Test_NewMemoryWriteTool_Should_HaveAllSourceTypeEnums(t *testing.T) {
 	// Assert - verify the tool has source_type param with correct enum values
 	assert.That(t, "tool must have source_type param", tool.Definition.HasParameter("source_type"), true)
 }
+
+// -----------------------------------------------------------------------------
+// Embedding tests
+// -----------------------------------------------------------------------------
+
+// mockEmbeddingClient is a test double for the EmbeddingClient interface.
+type mockEmbeddingClient struct { //nolint:govet // test double, alignment acceptable
+	embedding agent.Embedding
+	lastInput string
+	err       error
+	callCount int
+}
+
+func (m *mockEmbeddingClient) Embed(_ context.Context, text string) (agent.Embedding, error) {
+	m.callCount++
+	m.lastInput = text
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.embedding, nil
+}
+
+func Test_MemoryToolService_WithEmbedder_Should_GenerateEmbedding(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	embedder := &mockEmbeddingClient{
+		embedding: agent.Embedding{0.1, 0.2, 0.3, 0.4, 0.5},
+	}
+	svc := tooling.NewMemoryToolService(store, testIDGenerator()).
+		WithEmbedder(embedder)
+
+	args := `{
+		"source_type": "fact",
+		"raw_content": "The sky is blue",
+		"summary": "Sky color fact",
+		"context_description": "General knowledge",
+		"keywords": ["sky", "blue"],
+		"tags": ["science"],
+		"importance": 3
+	}`
+
+	// Act
+	_, err := svc.MemoryWrite(context.Background(), args)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "embedder must be called once", embedder.callCount, 1)
+
+	// Verify the stored note has an embedding
+	for _, note := range store.notes {
+		assert.That(t, "note must have embedding", len(note.Embedding) > 0, true)
+		assert.That(t, "embedding must have correct length", len(note.Embedding), 5)
+	}
+}
+
+func Test_MemoryToolService_WithEmbedder_Should_UseSearchableText(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	embedder := &mockEmbeddingClient{
+		embedding: agent.Embedding{0.1, 0.2, 0.3},
+	}
+	svc := tooling.NewMemoryToolService(store, testIDGenerator()).
+		WithEmbedder(embedder)
+
+	args := `{
+		"source_type": "preference",
+		"raw_content": "I like Go",
+		"summary": "Programming preference",
+		"context_description": "Technical preferences",
+		"keywords": ["go", "programming"],
+		"tags": ["tech"],
+		"importance": 4
+	}`
+
+	// Act
+	_, _ = svc.MemoryWrite(context.Background(), args)
+
+	// Assert - verify the embedding input includes all searchable fields
+	assert.That(t, "input must contain raw content", containsSubstring(embedder.lastInput, "I like Go"), true)
+	assert.That(t, "input must contain summary", containsSubstring(embedder.lastInput, "Programming preference"), true)
+}
+
+func Test_MemoryToolService_WithEmbedder_OnError_Should_StillStoreNote(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	embedder := &mockEmbeddingClient{
+		err: errors.New("embedding service unavailable"),
+	}
+	svc := tooling.NewMemoryToolService(store, testIDGenerator()).
+		WithEmbedder(embedder)
+
+	args := `{
+		"source_type": "fact",
+		"raw_content": "Test content",
+		"summary": "Test summary",
+		"context_description": "Test context",
+		"keywords": [],
+		"tags": [],
+		"importance": 2
+	}`
+
+	// Act
+	result, err := svc.MemoryWrite(context.Background(), args)
+
+	// Assert - note should be stored even if embedding fails
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "result must contain success", result != "", true)
+	assert.That(t, "store must have 1 note", len(store.notes), 1)
+
+	// Verify the note was stored without embedding
+	for _, note := range store.notes {
+		assert.That(t, "note must have no embedding", len(note.Embedding), 0)
+	}
+}
+
+func Test_MemoryToolService_WithoutEmbedder_Should_NotGenerateEmbedding(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	svc := tooling.NewMemoryToolService(store, testIDGenerator())
+	// No embedder configured
+
+	args := `{
+		"source_type": "fact",
+		"raw_content": "Test content",
+		"summary": "Test summary",
+		"context_description": "Test context",
+		"keywords": [],
+		"tags": [],
+		"importance": 2
+	}`
+
+	// Act
+	_, err := svc.MemoryWrite(context.Background(), args)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+
+	// Verify the note has no embedding
+	for _, note := range store.notes {
+		assert.That(t, "note must have no embedding", len(note.Embedding), 0)
+	}
+}
+
+// containsSubstring checks if s contains substr (helper for tests).
+func containsSubstring(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
+		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
