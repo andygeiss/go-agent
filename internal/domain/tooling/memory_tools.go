@@ -24,12 +24,14 @@ type memoryWriteArgs struct {
 
 // memorySearchArgs represents the arguments for the memory_search tool.
 type memorySearchArgs struct {
-	Query     string   `json:"query"`
-	SessionID string   `json:"session_id,omitempty"`
-	TaskID    string   `json:"task_id,omitempty"`
-	UserID    string   `json:"user_id,omitempty"`
-	Tags      []string `json:"tags,omitempty"`
-	Limit     int      `json:"limit,omitempty"`
+	Query         string   `json:"query"`
+	SessionID     string   `json:"session_id,omitempty"`
+	SourceTypes   []string `json:"source_types,omitempty"`
+	TaskID        string   `json:"task_id,omitempty"`
+	UserID        string   `json:"user_id,omitempty"`
+	Tags          []string `json:"tags,omitempty"`
+	Limit         int      `json:"limit,omitempty"`
+	MinImportance int      `json:"min_importance,omitempty"`
 }
 
 // memoryGetArgs represents the arguments for the memory_get tool.
@@ -108,30 +110,42 @@ func (s *MemoryToolService) MemorySearch(ctx context.Context, arguments string) 
 		return "", fmt.Errorf("failed to parse arguments: %w", err)
 	}
 
-	// Build search options
-	var opts *agent.MemorySearchOptions
-	if args.UserID != "" || args.SessionID != "" || args.TaskID != "" || len(args.Tags) > 0 {
-		opts = &agent.MemorySearchOptions{
-			UserID:    args.UserID,
-			SessionID: args.SessionID,
-			TaskID:    args.TaskID,
-			Tags:      args.Tags,
-		}
-	}
+	opts := buildMemorySearchOpts(args)
+	limit := defaultLimit(args.Limit, 10)
 
-	// Default limit
-	limit := args.Limit
-	if limit <= 0 {
-		limit = 10
-	}
-
-	// Search for notes
 	notes, err := s.store.Search(ctx, args.Query, limit, opts)
 	if err != nil {
 		return "", fmt.Errorf("failed to search memory: %w", err)
 	}
 
-	// Convert to search results (lightweight output)
+	return marshalSearchResults(notes)
+}
+
+// buildMemorySearchOpts creates MemorySearchOptions from args if any filters are set.
+func buildMemorySearchOpts(args memorySearchArgs) *agent.MemorySearchOptions {
+	if args.UserID == "" && args.SessionID == "" && args.TaskID == "" && len(args.Tags) == 0 && len(args.SourceTypes) == 0 && args.MinImportance == 0 {
+		return nil
+	}
+	return &agent.MemorySearchOptions{
+		MinImportance: args.MinImportance,
+		SessionID:     args.SessionID,
+		SourceTypes:   mapSourceTypes(args.SourceTypes),
+		TaskID:        args.TaskID,
+		UserID:        args.UserID,
+		Tags:          args.Tags,
+	}
+}
+
+// defaultLimit returns the limit or a default if limit is <= 0.
+func defaultLimit(limit, defaultVal int) int {
+	if limit <= 0 {
+		return defaultVal
+	}
+	return limit
+}
+
+// marshalSearchResults converts notes to JSON search results.
+func marshalSearchResults(notes []*agent.MemoryNote) (string, error) {
 	results := make([]memorySearchResult, len(notes))
 	for i, note := range notes {
 		results[i] = memorySearchResult{
@@ -217,22 +231,19 @@ func (s *MemoryToolService) WithUserID(userID string) *MemoryToolService {
 
 // mapSourceType maps a string to a SourceType.
 func mapSourceType(s string) agent.SourceType {
-	switch s {
-	case "fact":
-		return agent.SourceTypeFact
-	case "plan_step":
-		return agent.SourceTypePlanStep
-	case "preference":
-		return agent.SourceTypePreference
-	case "summary":
-		return agent.SourceTypeSummary
-	case "tool_result":
-		return agent.SourceTypeToolResult
-	case "user_message":
-		return agent.SourceTypeUserMessage
-	default:
-		return agent.SourceTypeFact
+	return agent.ParseSourceType(s)
+}
+
+// mapSourceTypes converts a slice of strings to SourceTypes.
+func mapSourceTypes(strs []string) []agent.SourceType {
+	if len(strs) == 0 {
+		return nil
 	}
+	result := make([]agent.SourceType, len(strs))
+	for i, s := range strs {
+		result[i] = agent.ParseSourceType(s)
+	}
+	return result
 }
 
 // NewMemoryGetTool creates the memory_get tool definition.
@@ -258,6 +269,10 @@ func NewMemorySearchTool(svc *MemoryToolService) agent.Tool {
 			WithParameterDef(agent.NewParameterDefinition("limit", agent.ParamTypeInteger).
 				WithDescription("Maximum number of notes to return (default: 10)").
 				WithDefault("10")).
+			WithParameterDef(agent.NewParameterDefinition("source_types", agent.ParamTypeArray).
+				WithDescription("Filter by source types: decision, experiment, external_source, fact, issue, plan_step, preference, requirement, retrospective, summary, tool_result, user_message")).
+			WithParameterDef(agent.NewParameterDefinition("min_importance", agent.ParamTypeInteger).
+				WithDescription("Filter by minimum importance (1-5)")).
 			WithParameterDef(agent.NewParameterDefinition("user_id", agent.ParamTypeString).
 				WithDescription("Filter by user ID")).
 			WithParameterDef(agent.NewParameterDefinition("session_id", agent.ParamTypeString).
@@ -272,10 +287,10 @@ func NewMemorySearchTool(svc *MemoryToolService) agent.Tool {
 func NewMemoryWriteTool(svc *MemoryToolService) agent.Tool {
 	return agent.Tool{
 		ID: "memory_write",
-		Definition: agent.NewToolDefinition("memory_write", "Store a new memory note for long-term recall. Use this to save preferences, important facts, task results, or summaries.").
+		Definition: agent.NewToolDefinition("memory_write", "Store a new memory note for long-term recall. Use this to save preferences, important facts, decisions, requirements, or summaries.").
 			WithParameterDef(agent.NewParameterDefinition("source_type", agent.ParamTypeString).
-				WithDescription("What created this note: user_message, tool_result, summary, plan_step, fact, or preference").
-				WithEnum("user_message", "tool_result", "summary", "plan_step", "fact", "preference").
+				WithDescription("What category this note belongs to: decision (architectural choices), experiment (hypotheses/results), external_source (URLs/references), fact (verified information), issue (problems/bugs), plan_step (task steps), preference (user preferences), requirement (must-haves), retrospective (lessons learned), summary (condensed info), tool_result (tool output), user_message (user input)").
+				WithEnum("decision", "experiment", "external_source", "fact", "issue", "plan_step", "preference", "requirement", "retrospective", "summary", "tool_result", "user_message").
 				WithRequired()).
 			WithParameterDef(agent.NewParameterDefinition("raw_content", agent.ParamTypeString).
 				WithDescription("The core text or compact representation of the source").

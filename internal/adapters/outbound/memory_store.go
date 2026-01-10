@@ -93,6 +93,19 @@ func matchesFilters(note *agent.MemoryNote, opts *agent.MemorySearchOptions) boo
 	if opts == nil {
 		return true
 	}
+	return matchesImportance(note, opts) &&
+		matchesScope(note, opts) &&
+		matchesSourceTypes(note, opts) &&
+		matchesTags(note, opts)
+}
+
+// matchesImportance checks if note meets minimum importance requirement.
+func matchesImportance(note *agent.MemoryNote, opts *agent.MemorySearchOptions) bool {
+	return opts.MinImportance <= 0 || note.Importance >= opts.MinImportance
+}
+
+// matchesScope checks if note matches user/session/task scope filters.
+func matchesScope(note *agent.MemoryNote, opts *agent.MemorySearchOptions) bool {
 	if opts.UserID != "" && note.UserID != opts.UserID {
 		return false
 	}
@@ -102,10 +115,22 @@ func matchesFilters(note *agent.MemoryNote, opts *agent.MemorySearchOptions) boo
 	if opts.TaskID != "" && note.TaskID != opts.TaskID {
 		return false
 	}
-	if len(opts.Tags) > 0 && !hasAnyTag(note, opts.Tags) {
-		return false
-	}
 	return true
+}
+
+// matchesSourceTypes checks if note has one of the required source types.
+func matchesSourceTypes(note *agent.MemoryNote, opts *agent.MemorySearchOptions) bool {
+	return len(opts.SourceTypes) == 0 || hasAnySourceType(note, opts.SourceTypes)
+}
+
+// matchesTags checks if note has any of the required tags.
+func matchesTags(note *agent.MemoryNote, opts *agent.MemorySearchOptions) bool {
+	return len(opts.Tags) == 0 || hasAnyTag(note, opts.Tags)
+}
+
+// hasAnySourceType checks if the note's source type matches any of the specified types.
+func hasAnySourceType(note *agent.MemoryNote, sourceTypes []agent.SourceType) bool {
+	return slices.Contains(sourceTypes, note.SourceType)
 }
 
 // matchesQuery checks if the note content matches the search query.

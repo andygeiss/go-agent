@@ -844,6 +844,69 @@ func Benchmark_MemoryTools_Search_10000(b *testing.B) {
 	}
 }
 
+// Benchmark_MemoryTools_Search_WithSourceTypes benchmarks memory_search with source_types filter.
+func Benchmark_MemoryTools_Search_WithSourceTypes(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateTypedNotes(ctx, store, 1000)
+	idGen := func() string { return unusedIDGenerator }
+	svc := tooling.NewMemoryToolService(store, idGen)
+
+	b.ResetTimer()
+	for b.Loop() {
+		args := `{"query": "architecture", "limit": 10, "source_types": ["decision", "fact"]}`
+		_, _ = svc.MemorySearch(ctx, args)
+	}
+}
+
+// Benchmark_MemoryTools_Search_WithMinImportance benchmarks memory_search with min_importance filter.
+func Benchmark_MemoryTools_Search_WithMinImportance(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateTypedNotes(ctx, store, 1000)
+	idGen := func() string { return unusedIDGenerator }
+	svc := tooling.NewMemoryToolService(store, idGen)
+
+	b.ResetTimer()
+	for b.Loop() {
+		args := `{"query": "programming", "limit": 10, "min_importance": 4}`
+		_, _ = svc.MemorySearch(ctx, args)
+	}
+}
+
+// Benchmark_MemoryTools_Search_WithAllFilters benchmarks memory_search with all filters.
+func Benchmark_MemoryTools_Search_WithAllFilters(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateTypedNotes(ctx, store, 1000)
+	idGen := func() string { return unusedIDGenerator }
+	svc := tooling.NewMemoryToolService(store, idGen)
+
+	b.ResetTimer()
+	for b.Loop() {
+		args := `{"query": "programming", "limit": 10, "source_types": ["decision", "requirement"], "min_importance": 4, "scope": "session", "tags": ["architecture"]}`
+		_, _ = svc.MemorySearch(ctx, args)
+	}
+}
+
+// Benchmark_MemoryTools_Write_TypedNote benchmarks memory_write with source type.
+func Benchmark_MemoryTools_Write_TypedNote(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	idCounter := 0
+	idGen := func() string {
+		idCounter++
+		return fmt.Sprintf("note-%d", idCounter)
+	}
+	svc := tooling.NewMemoryToolService(store, idGen)
+
+	b.ResetTimer()
+	for b.Loop() {
+		args := `{"source_type": "decision", "raw_content": "Use PostgreSQL for database", "summary": "Database decision", "importance": 4, "tags": ["architecture", "database"]}`
+		_, _ = svc.MemoryWrite(ctx, args)
+	}
+}
+
 // Benchmark_MemoryTools_Get benchmarks the memory_get tool.
 func Benchmark_MemoryTools_Get(b *testing.B) {
 	ctx := context.Background()
@@ -1031,6 +1094,100 @@ func Benchmark_MemoryNote_WithBuilders(b *testing.B) {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// Typed Memory Note Factory Benchmarks
+// -----------------------------------------------------------------------------
+
+// Benchmark_NewDecisionNote benchmarks decision note factory.
+func Benchmark_NewDecisionNote(b *testing.B) {
+	for b.Loop() {
+		_ = agent.NewDecisionNote("note-1", "Use PostgreSQL for persistence", "database", "architecture")
+	}
+}
+
+// Benchmark_NewExperimentNote benchmarks experiment note factory.
+func Benchmark_NewExperimentNote(b *testing.B) {
+	for b.Loop() {
+		_ = agent.NewExperimentNote("note-1", "Caching reduces latency", "50% reduction observed", "performance")
+	}
+}
+
+// Benchmark_NewExternalSourceNote benchmarks external source note factory.
+func Benchmark_NewExternalSourceNote(b *testing.B) {
+	for b.Loop() {
+		_ = agent.NewExternalSourceNote("note-1", "https://go.dev/doc", "Official Go documentation", "docs", "reference")
+	}
+}
+
+// Benchmark_NewFactNote benchmarks fact note factory.
+func Benchmark_NewFactNote(b *testing.B) {
+	for b.Loop() {
+		_ = agent.NewFactNote("note-1", "The system uses hexagonal architecture", "architecture")
+	}
+}
+
+// Benchmark_NewIssueNote benchmarks issue note factory.
+func Benchmark_NewIssueNote(b *testing.B) {
+	for b.Loop() {
+		_ = agent.NewIssueNote("note-1", "Memory leak in connection pool", "bug", "critical")
+	}
+}
+
+// Benchmark_NewPlanStepNote benchmarks plan step note factory.
+func Benchmark_NewPlanStepNote(b *testing.B) {
+	for b.Loop() {
+		_ = agent.NewPlanStepNote("note-1", "Implement caching layer", "plan-123", 3, "optimization")
+	}
+}
+
+// Benchmark_NewPreferenceNote benchmarks preference note factory.
+func Benchmark_NewPreferenceNote(b *testing.B) {
+	for b.Loop() {
+		_ = agent.NewPreferenceNote("note-1", "Use verbose logging in development", "config", "dev")
+	}
+}
+
+// Benchmark_NewRequirementNote benchmarks requirement note factory.
+func Benchmark_NewRequirementNote(b *testing.B) {
+	for b.Loop() {
+		_ = agent.NewRequirementNote("note-1", "Must support 1000 concurrent users", "scalability", "nfr")
+	}
+}
+
+// Benchmark_NewRetrospectiveNote benchmarks retrospective note factory.
+func Benchmark_NewRetrospectiveNote(b *testing.B) {
+	for b.Loop() {
+		_ = agent.NewRetrospectiveNote("note-1", "Early optimization was unnecessary", "lessons")
+	}
+}
+
+// Benchmark_NewSummaryNote benchmarks summary note factory.
+func Benchmark_NewSummaryNote(b *testing.B) {
+	sourceIDs := []string{"note-1", "note-2", "note-3", "note-4", "note-5"}
+	b.ResetTimer()
+	for b.Loop() {
+		_ = agent.NewSummaryNote("note-100", "Combined summary of database decisions", sourceIDs, "database")
+	}
+}
+
+// Benchmark_AllFactoryNotes benchmarks creating one note of each factory type.
+func Benchmark_AllFactoryNotes(b *testing.B) {
+	sourceIDs := []string{"src-1", "src-2"}
+	b.ResetTimer()
+	for b.Loop() {
+		_ = agent.NewDecisionNote("d-1", "decision content", "tag1")
+		_ = agent.NewExperimentNote("e-1", "hypothesis", "result", "tag1")
+		_ = agent.NewExternalSourceNote("x-1", "https://example.com", "annotation", "tag1")
+		_ = agent.NewFactNote("f-1", "fact content", "tag1")
+		_ = agent.NewIssueNote("i-1", "issue description", "tag1")
+		_ = agent.NewPlanStepNote("p-1", "plan step", "plan-1", 1, "tag1")
+		_ = agent.NewPreferenceNote("pr-1", "preference content", "tag1")
+		_ = agent.NewRequirementNote("r-1", "requirement content", "tag1")
+		_ = agent.NewRetrospectiveNote("rt-1", "retrospective content", "tag1")
+		_ = agent.NewSummaryNote("s-1", "summary content", sourceIDs, "tag1")
+	}
+}
+
 // Benchmark_MemoryNote_SearchableText benchmarks searchable text generation.
 func Benchmark_MemoryNote_SearchableText(b *testing.B) {
 	note := agent.NewMemoryNote("note-1", agent.SourceTypeFact).
@@ -1063,6 +1220,243 @@ func Benchmark_MemoryNote_HasKeyword(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		_ = note.HasKeyword("preference")
+	}
+}
+
+// -----------------------------------------------------------------------------
+// SourceType Validation Benchmarks
+// -----------------------------------------------------------------------------
+
+// Benchmark_IsValidSourceType benchmarks source type validation.
+func Benchmark_IsValidSourceType(b *testing.B) {
+	for b.Loop() {
+		_ = agent.IsValidSourceType("decision")
+		_ = agent.IsValidSourceType("invalid")
+		_ = agent.IsValidSourceType("fact")
+	}
+}
+
+// Benchmark_ParseSourceType benchmarks source type parsing.
+func Benchmark_ParseSourceType(b *testing.B) {
+	for b.Loop() {
+		_ = agent.ParseSourceType("decision")
+		_ = agent.ParseSourceType("requirement")
+		_ = agent.ParseSourceType("experiment")
+	}
+}
+
+// Benchmark_ValidSourceTypes benchmarks getting valid source types list.
+func Benchmark_ValidSourceTypes(b *testing.B) {
+	for b.Loop() {
+		_ = agent.ValidSourceTypes()
+	}
+}
+
+// -----------------------------------------------------------------------------
+// MemorySearchOptions Benchmarks
+// -----------------------------------------------------------------------------
+
+// Benchmark_MemoryStore_Search_WithSourceTypes_1000 benchmarks search with source type filter.
+func Benchmark_MemoryStore_Search_WithSourceTypes_1000(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateTypedNotes(ctx, store, 1000)
+
+	opts := &agent.MemorySearchOptions{
+		SourceTypes: []agent.SourceType{agent.SourceTypeDecision, agent.SourceTypeFact},
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.Search(ctx, "programming", 10, opts)
+	}
+}
+
+// Benchmark_MemoryStore_Search_WithMinImportance_1000 benchmarks search with importance filter.
+func Benchmark_MemoryStore_Search_WithMinImportance_1000(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateTypedNotes(ctx, store, 1000)
+
+	opts := &agent.MemorySearchOptions{
+		MinImportance: 4,
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.Search(ctx, "programming", 10, opts)
+	}
+}
+
+// Benchmark_MemoryStore_Search_WithCombinedFilters_1000 benchmarks search with all filters.
+func Benchmark_MemoryStore_Search_WithCombinedFilters_1000(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateTypedNotes(ctx, store, 1000)
+
+	opts := &agent.MemorySearchOptions{
+		SourceTypes:   []agent.SourceType{agent.SourceTypeDecision, agent.SourceTypeRequirement},
+		MinImportance: 3,
+		Tags:          []string{"architecture"},
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.Search(ctx, "programming", 10, opts)
+	}
+}
+
+// Benchmark_MemoryStore_Search_WithCombinedFilters_10000 benchmarks search with all filters at scale.
+func Benchmark_MemoryStore_Search_WithCombinedFilters_10000(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateTypedNotes(ctx, store, 10000)
+
+	opts := &agent.MemorySearchOptions{
+		SourceTypes:   []agent.SourceType{agent.SourceTypeDecision, agent.SourceTypeRequirement, agent.SourceTypeFact},
+		MinImportance: 4,
+		Tags:          []string{"architecture", "database"},
+		UserID:        "bench-user",
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = store.Search(ctx, "programming", 10, opts)
+	}
+}
+
+// generateTypedNotes creates n typed memory notes with varied source types for benchmarking.
+func generateTypedNotes(ctx context.Context, store agent.MemoryStore, n int) {
+	sourceTypes := []agent.SourceType{
+		agent.SourceTypeDecision,
+		agent.SourceTypeExperiment,
+		agent.SourceTypeExternalSource,
+		agent.SourceTypeFact,
+		agent.SourceTypeIssue,
+		agent.SourceTypePlanStep,
+		agent.SourceTypePreference,
+		agent.SourceTypeRequirement,
+		agent.SourceTypeRetrospective,
+		agent.SourceTypeSummary,
+	}
+	tags := [][]string{
+		{"architecture", "database"},
+		{"performance", "optimization"},
+		{"api", "design"},
+		{"testing", "quality"},
+		{"deployment", "devops"},
+	}
+	for i := range n {
+		noteID := agent.NoteID(fmt.Sprintf("note-%d", i))
+		sourceType := sourceTypes[i%len(sourceTypes)]
+		note := agent.NewMemoryNote(noteID, sourceType).
+			WithRawContent(fmt.Sprintf("Content for typed note %d about programming and architecture patterns", i)).
+			WithSummary(fmt.Sprintf("Typed summary for note %d about programming topics", i)).
+			WithContextDescription(fmt.Sprintf("Context: Note created during typed benchmark iteration %d", i)).
+			WithKeywords("benchmark", "typed", fmt.Sprintf("keyword-%d", i%100)).
+			WithTags(tags[i%len(tags)]...).
+			WithImportance((i % 5) + 1).
+			WithUserID("bench-user").
+			WithSessionID("bench-session")
+		_ = store.Write(ctx, note)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Service-Level Convenience Method Benchmarks
+// -----------------------------------------------------------------------------
+
+// Benchmark_MemorizingService_SearchDecisions benchmarks SearchDecisions.
+func Benchmark_MemorizingService_SearchDecisions(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateTypedNotes(ctx, store, 1000)
+	svc := memorizing.NewService(store)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = svc.SearchDecisions(ctx, "architecture", 10)
+	}
+}
+
+// Benchmark_MemorizingService_SearchFacts benchmarks SearchFacts.
+func Benchmark_MemorizingService_SearchFacts(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateTypedNotes(ctx, store, 1000)
+	svc := memorizing.NewService(store)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = svc.SearchFacts(ctx, "programming", 10)
+	}
+}
+
+// Benchmark_MemorizingService_SearchRequirements benchmarks SearchRequirements.
+func Benchmark_MemorizingService_SearchRequirements(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateTypedNotes(ctx, store, 1000)
+	svc := memorizing.NewService(store)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = svc.SearchRequirements(ctx, "scalability", 10)
+	}
+}
+
+// Benchmark_MemorizingService_SearchBySourceTypes benchmarks SearchBySourceTypes with multiple types.
+func Benchmark_MemorizingService_SearchBySourceTypes(b *testing.B) {
+	ctx := context.Background()
+	store := outbound.NewInMemoryMemoryStore()
+	generateTypedNotes(ctx, store, 1000)
+	svc := memorizing.NewService(store)
+	sourceTypes := []agent.SourceType{agent.SourceTypeDecision, agent.SourceTypeFact, agent.SourceTypeRequirement}
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = svc.SearchBySourceTypes(ctx, "architecture", sourceTypes, 10)
+	}
+}
+
+// Benchmark_MemorizingService_WriteTypedNote benchmarks WriteTypedNote.
+func Benchmark_MemorizingService_WriteTypedNote(b *testing.B) {
+	ctx := context.Background()
+	opts := &memorizing.TypedNoteOptions{
+		Tags:       []string{"architecture", "database"},
+		Importance: 4,
+		Keywords:   []string{"postgresql", "orm"},
+	}
+
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		store := outbound.NewInMemoryMemoryStore()
+		svc := memorizing.NewService(store)
+		noteID := agent.NoteID(fmt.Sprintf("note-%d", i))
+		_ = svc.WriteTypedNote(ctx, noteID, agent.SourceTypeDecision, "Use PostgreSQL for persistence", opts)
+	}
+}
+
+// Benchmark_MemorizingService_TypedWorkflow benchmarks a complete typed memory workflow.
+func Benchmark_MemorizingService_TypedWorkflow(b *testing.B) {
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		store := outbound.NewInMemoryMemoryStore()
+		svc := memorizing.NewService(store)
+
+		// Write various typed notes
+		_ = svc.WriteNote(ctx, agent.NewDecisionNote(agent.NoteID(fmt.Sprintf("d-%d", i)), "Use hexagonal architecture", "architecture"))
+		_ = svc.WriteNote(ctx, agent.NewFactNote(agent.NoteID(fmt.Sprintf("f-%d", i)), "Go supports concurrency", "golang"))
+		_ = svc.WriteNote(ctx, agent.NewRequirementNote(agent.NoteID(fmt.Sprintf("r-%d", i)), "Must handle 1000 TPS", "performance"))
+		_ = svc.WriteNote(ctx, agent.NewPreferenceNote(agent.NoteID(fmt.Sprintf("p-%d", i)), "Prefer explicit error handling", "style"))
+		_ = svc.WriteNote(ctx, agent.NewIssueNote(agent.NoteID(fmt.Sprintf("i-%d", i)), "Memory leak detected", "bug"))
+
+		// Search by type
+		_, _ = svc.SearchDecisions(ctx, "architecture", 5)
+		_, _ = svc.SearchFacts(ctx, "concurrency", 5)
+		_, _ = svc.SearchRequirements(ctx, "performance", 5)
 	}
 }
 

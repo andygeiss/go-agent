@@ -248,3 +248,94 @@ func Test_MemoryStore_Search_WithNoMatches_Should_ReturnEmpty(t *testing.T) {
 	assert.That(t, "error must be nil", err, nil)
 	assert.That(t, "should return empty slice", len(results), 0)
 }
+
+func Test_MemoryStore_Search_Should_FilterBySourceTypes(t *testing.T) {
+	// Arrange
+	store := outbound.NewInMemoryMemoryStore()
+	note1 := agent.NewMemoryNote("note-1", agent.SourceTypeDecision).
+		WithRawContent("architectural decision")
+	note2 := agent.NewMemoryNote("note-2", agent.SourceTypeFact).
+		WithRawContent("fact about system")
+	note3 := agent.NewMemoryNote("note-3", agent.SourceTypeRequirement).
+		WithRawContent("requirement spec")
+	_ = store.Write(context.Background(), note1)
+	_ = store.Write(context.Background(), note2)
+	_ = store.Write(context.Background(), note3)
+
+	// Act
+	opts := &agent.MemorySearchOptions{SourceTypes: []agent.SourceType{agent.SourceTypeDecision, agent.SourceTypeRequirement}}
+	results, err := store.Search(context.Background(), "", 10, opts)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should find 2 results", len(results), 2)
+}
+
+func Test_MemoryStore_Search_Should_FilterBySingleSourceType(t *testing.T) {
+	// Arrange
+	store := outbound.NewInMemoryMemoryStore()
+	note1 := agent.NewMemoryNote("note-1", agent.SourceTypeIssue).
+		WithRawContent("bug report")
+	note2 := agent.NewMemoryNote("note-2", agent.SourceTypeFact).
+		WithRawContent("fact")
+	_ = store.Write(context.Background(), note1)
+	_ = store.Write(context.Background(), note2)
+
+	// Act
+	opts := &agent.MemorySearchOptions{SourceTypes: []agent.SourceType{agent.SourceTypeIssue}}
+	results, err := store.Search(context.Background(), "", 10, opts)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should find 1 result", len(results), 1)
+	assert.That(t, "result should be issue type", results[0].SourceType, agent.SourceTypeIssue)
+}
+
+func Test_MemoryStore_Search_Should_FilterByMinImportance(t *testing.T) {
+	// Arrange
+	store := outbound.NewInMemoryMemoryStore()
+	note1 := agent.NewMemoryNote("note-1", agent.SourceTypeFact).
+		WithRawContent("low importance").WithImportance(1)
+	note2 := agent.NewMemoryNote("note-2", agent.SourceTypeFact).
+		WithRawContent("medium importance").WithImportance(3)
+	note3 := agent.NewMemoryNote("note-3", agent.SourceTypeFact).
+		WithRawContent("high importance").WithImportance(5)
+	_ = store.Write(context.Background(), note1)
+	_ = store.Write(context.Background(), note2)
+	_ = store.Write(context.Background(), note3)
+
+	// Act
+	opts := &agent.MemorySearchOptions{MinImportance: 3}
+	results, err := store.Search(context.Background(), "importance", 10, opts)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should find 2 results with importance >= 3", len(results), 2)
+}
+
+func Test_MemoryStore_Search_Should_CombineSourceTypeAndMinImportance(t *testing.T) {
+	// Arrange
+	store := outbound.NewInMemoryMemoryStore()
+	note1 := agent.NewMemoryNote("note-1", agent.SourceTypeDecision).
+		WithRawContent("decision").WithImportance(2)
+	note2 := agent.NewMemoryNote("note-2", agent.SourceTypeDecision).
+		WithRawContent("decision").WithImportance(4)
+	note3 := agent.NewMemoryNote("note-3", agent.SourceTypeFact).
+		WithRawContent("fact").WithImportance(5)
+	_ = store.Write(context.Background(), note1)
+	_ = store.Write(context.Background(), note2)
+	_ = store.Write(context.Background(), note3)
+
+	// Act
+	opts := &agent.MemorySearchOptions{
+		SourceTypes:   []agent.SourceType{agent.SourceTypeDecision},
+		MinImportance: 3,
+	}
+	results, err := store.Search(context.Background(), "", 10, opts)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should find 1 result (decision with importance >= 3)", len(results), 1)
+	assert.That(t, "result should be decision type", results[0].SourceType, agent.SourceTypeDecision)
+	assert.That(t, "result importance should be >= 3", results[0].Importance >= 3, true)
+}

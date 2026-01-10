@@ -172,8 +172,54 @@ For detailed architecture documentation, see [CONTEXT.md](CONTEXT.md).
 | `index.diff_snapshot` | Compare two snapshots to find added/changed/removed files |
 | `index.scan` | Scan directories and create a file system snapshot |
 | `memory_get` | Retrieve a specific memory note by ID |
-| `memory_search` | Search memory notes with query and filters |
-| `memory_write` | Store a new memory note with metadata |
+| `memory_search` | Search memory notes with query, source types, and importance filters |
+| `memory_write` | Store a typed memory note with metadata and importance |
+
+### Typed Memory System
+
+Memory notes are categorized by **source type** for schema-aware storage and retrieval:
+
+| Source Type | Use Case | Default Importance |
+|-------------|----------|-------------------|
+| `decision` | Architectural or design decisions | 4 |
+| `experiment` | Hypotheses and experimental results | 3 |
+| `external_source` | URLs and external references | 2 |
+| `fact` | Verified information about the system | 3 |
+| `issue` | Problems, bugs, or blockers | 4 |
+| `plan_step` | Steps in a task plan | 3 |
+| `preference` | User preferences and settings | 4 |
+| `requirement` | Must-have requirements | 5 |
+| `retrospective` | Lessons learned | 3 |
+| `summary` | Condensed information from sources | 3 |
+
+The `memory_search` tool supports filtering by `source_types` and `min_importance`, enabling precise retrieval of relevant context.
+
+**Helper constructors** for schema-aware note creation:
+
+```go
+// Create typed notes with appropriate defaults
+note := agent.NewDecisionNote("note-1", "Use PostgreSQL", "database", "architecture")
+note := agent.NewRequirementNote("note-2", "Must support 1000 concurrent users")
+note := agent.NewExperimentNote("note-3", "Caching improves latency", "50% reduction")
+```
+
+**Programmatic search by type:**
+
+```go
+svc := memorizing.NewService(store)
+
+// Search specific types
+decisions, _ := svc.SearchDecisions(ctx, "database", 10)
+requirements, _ := svc.SearchRequirements(ctx, "scalability", 10)
+
+// Search with combined filters
+opts := &agent.MemorySearchOptions{
+    SourceTypes:   []agent.SourceType{agent.SourceTypeDecision},
+    MinImportance: 4,
+    Tags:          []string{"architecture"},
+}
+notes, _ := store.Search(ctx, "query", 10, opts)
+```
 
 ### Domain Events (alphabetically sorted)
 
@@ -243,9 +289,10 @@ go run ./cmd/cli [flags]
 | `index changed [since]` | Find files changed since timestamp/duration (default: 24h) |
 | `index diff <from> <to>` | Compare two snapshots |
 | `index scan [paths...]` | Scan directories (default: current directory) |
+| `memory delete <id>` | Delete a memory note by ID |
 | `memory get <id>` | Retrieve a memory note by ID |
-| `memory search <query>` | Search memory notes |
-| `memory write <content>` | Store a new memory note |
+| `memory search [opts] <query>` | Search memory notes (opts: --source-type, --min-importance, --tags) |
+| `memory write [opts] <content>` | Store a memory note (opts: --source-type, --importance, --tags) |
 | `quit` / `exit` | Exit the CLI |
 | `stats` | Show agent statistics |
 

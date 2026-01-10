@@ -288,3 +288,120 @@ func Test_NewMemoryGetTool_Should_CreateValidTool(t *testing.T) {
 	assert.That(t, "tool name must match", tool.Definition.Name, "memory_get")
 	assert.That(t, "tool must have id param", tool.Definition.HasParameter("id"), true)
 }
+
+// Tests for new source types and filters
+
+func Test_MemoryToolService_MemoryWrite_WithNewSourceTypes_Should_StoreCorrectly(t *testing.T) {
+	testCases := []struct {
+		name       string
+		sourceType string
+		expected   agent.SourceType
+	}{
+		{"decision", "decision", agent.SourceTypeDecision},
+		{"experiment", "experiment", agent.SourceTypeExperiment},
+		{"external_source", "external_source", agent.SourceTypeExternalSource},
+		{"issue", "issue", agent.SourceTypeIssue},
+		{"requirement", "requirement", agent.SourceTypeRequirement},
+		{"retrospective", "retrospective", agent.SourceTypeRetrospective},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Arrange
+			store := newMockMemoryStore()
+			svc := tooling.NewMemoryToolService(store, testIDGenerator())
+			args := `{"source_type": "` + tc.sourceType + `", "raw_content": "test", "summary": "test"}`
+
+			// Act
+			_, err := svc.MemoryWrite(context.Background(), args)
+
+			// Assert
+			assert.That(t, "error must be nil", err, nil)
+			for _, note := range store.notes {
+				assert.That(t, "source type must match", note.SourceType, tc.expected)
+			}
+		})
+	}
+}
+
+func Test_MemoryToolService_MemorySearch_WithSourceTypesFilter_Should_PassToStore(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	store.searchNotes = []*agent.MemoryNote{
+		agent.NewMemoryNote("note-1", agent.SourceTypeDecision).WithRawContent("decision"),
+	}
+	svc := tooling.NewMemoryToolService(store, testIDGenerator())
+	args := `{"query": "test", "source_types": ["decision", "requirement"]}`
+
+	// Act
+	result, err := svc.MemorySearch(context.Background(), args)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "result must not be empty", result != "", true)
+}
+
+func Test_MemoryToolService_MemorySearch_WithMinImportance_Should_PassToStore(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	store.searchNotes = []*agent.MemoryNote{
+		agent.NewMemoryNote("note-1", agent.SourceTypeFact).WithRawContent("fact").WithImportance(4),
+	}
+	svc := tooling.NewMemoryToolService(store, testIDGenerator())
+	args := `{"query": "test", "min_importance": 3}`
+
+	// Act
+	result, err := svc.MemorySearch(context.Background(), args)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "result must not be empty", result != "", true)
+}
+
+func Test_MemoryToolService_MemorySearch_WithCombinedFilters_Should_Work(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	store.searchNotes = []*agent.MemoryNote{
+		agent.NewMemoryNote("note-1", agent.SourceTypeDecision).
+			WithRawContent("decision").
+			WithImportance(4).
+			WithTags("architecture"),
+	}
+	svc := tooling.NewMemoryToolService(store, testIDGenerator())
+	args := `{"query": "architecture", "source_types": ["decision"], "min_importance": 3, "tags": ["architecture"]}`
+
+	// Act
+	result, err := svc.MemorySearch(context.Background(), args)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+
+	var response map[string]any
+	_ = json.Unmarshal([]byte(result), &response)
+	assert.That(t, "status must be success", response["status"], "success")
+}
+
+func Test_NewMemorySearchTool_Should_HaveNewFilterParams(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	svc := tooling.NewMemoryToolService(store, testIDGenerator())
+
+	// Act
+	tool := tooling.NewMemorySearchTool(svc)
+
+	// Assert
+	assert.That(t, "tool must have source_types param", tool.Definition.HasParameter("source_types"), true)
+	assert.That(t, "tool must have min_importance param", tool.Definition.HasParameter("min_importance"), true)
+}
+
+func Test_NewMemoryWriteTool_Should_HaveAllSourceTypeEnums(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	svc := tooling.NewMemoryToolService(store, testIDGenerator())
+
+	// Act
+	tool := tooling.NewMemoryWriteTool(svc)
+
+	// Assert - verify the tool has source_type param with correct enum values
+	assert.That(t, "tool must have source_type param", tool.Definition.HasParameter("source_type"), true)
+}

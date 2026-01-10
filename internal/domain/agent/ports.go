@@ -32,10 +32,12 @@ type LLMClient interface {
 
 // MemorySearchOptions configures the search behavior.
 type MemorySearchOptions struct {
-	SessionID string   // Filter by session ID
-	TaskID    string   // Filter by task ID
-	UserID    string   // Filter by user ID
-	Tags      []string // Filter by tags (any match)
+	SessionID     string       // Filter by session ID
+	TaskID        string       // Filter by task ID
+	UserID        string       // Filter by user ID
+	SourceTypes   []SourceType // Filter by source types (any match)
+	Tags          []string     // Filter by tags (any match)
+	MinImportance int          // Filter by minimum importance (1-5, 0 = no filter)
 }
 
 // MemoryStore is the interface for persisting and retrieving memory notes.

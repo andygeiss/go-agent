@@ -129,6 +129,61 @@ func createUseCases(infra *infrastructure, ag *agent.Agent) *useCases {
 	}
 }
 
+// memoryFlags holds parsed flags for memory commands.
+type memoryFlags struct {
+	sourceType  agent.SourceType
+	sourceTypes []agent.SourceType
+	tags        []string
+	remaining   []string
+	importance  int
+}
+
+// parseMemoryFlags parses common memory command flags from args.
+func parseMemoryFlags(args []string) memoryFlags {
+	var flags memoryFlags
+	flags.sourceType = agent.SourceTypeUserMessage
+	flags.importance = 3
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--source-type" && i+1 < len(args):
+			i++
+			flags.sourceType = agent.ParseSourceType(args[i])
+			flags.sourceTypes = parseSourceTypeList(args[i])
+		case (arg == "--min-importance" || arg == "--importance") && i+1 < len(args):
+			i++
+			_, _ = fmt.Sscanf(args[i], "%d", &flags.importance)
+		case arg == "--tags" && i+1 < len(args):
+			i++
+			flags.tags = parseTagList(args[i])
+		default:
+			flags.remaining = append(flags.remaining, arg)
+		}
+	}
+	return flags
+}
+
+// parseSourceTypeList parses a comma-separated list of source types.
+func parseSourceTypeList(s string) []agent.SourceType {
+	parts := strings.Split(s, ",")
+	result := make([]agent.SourceType, 0, len(parts))
+	for _, part := range parts {
+		result = append(result, agent.ParseSourceType(strings.TrimSpace(part)))
+	}
+	return result
+}
+
+// parseTagList parses a comma-separated list of tags.
+func parseTagList(s string) []string {
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		result = append(result, strings.TrimSpace(part))
+	}
+	return result
+}
+
 // generateNoteID creates a unique note ID.
 func generateNoteID() string {
 	return fmt.Sprintf("note-%d", time.Now().UnixNano())
@@ -329,11 +384,15 @@ func handleMemoryGet(ctx context.Context, args []string, uc *useCases) {
 
 // handleMemorySearch handles the memory search subcommand.
 func handleMemorySearch(ctx context.Context, args []string, uc *useCases) {
-	query := strings.Join(args, " ")
+	flags := parseMemoryFlags(args)
+
+	query := strings.Join(flags.remaining, " ")
 	if query == "" {
 		query = "*" // Search all
 	}
-	notes, err := uc.searchNotes.Execute(ctx, query, 10, nil)
+
+	opts := buildSearchOptions(flags)
+	notes, err := uc.searchNotes.Execute(ctx, query, 10, opts)
 	if err != nil {
 		fmt.Printf("❌ Error: %v\n", err)
 		return
@@ -344,14 +403,27 @@ func handleMemorySearch(ctx context.Context, args []string, uc *useCases) {
 // handleMemoryWrite handles the memory write subcommand.
 func handleMemoryWrite(ctx context.Context, args []string, uc *useCases) {
 	if len(args) < 1 {
-		fmt.Println("Usage: memory write <text>")
+		fmt.Println("Usage: memory write [--source-type TYPE] [--importance N] [--tags t1,t2] <text>")
 		return
 	}
-	content := strings.Join(args, " ")
-	note := agent.NewMemoryNote(agent.NoteID(generateNoteID()), agent.SourceTypeUserMessage).
+
+	flags := parseMemoryFlags(args)
+
+	content := strings.Join(flags.remaining, " ")
+	if content == "" {
+		fmt.Println("❌ Error: content cannot be empty")
+		return
+	}
+
+	note := agent.NewMemoryNote(agent.NoteID(generateNoteID()), flags.sourceType).
 		WithRawContent(content).
 		WithSummary(content).
-		WithImportance(3)
+		WithImportance(flags.importance)
+
+	if len(flags.tags) > 0 {
+		note.WithTags(flags.tags...)
+	}
+
 	if err := uc.writeNote.Execute(ctx, note); err != nil {
 		fmt.Printf("❌ Error: %v\n", err)
 	} else {
@@ -359,13 +431,41 @@ func handleMemoryWrite(ctx context.Context, args []string, uc *useCases) {
 	}
 }
 
+// buildSearchOptions creates MemorySearchOptions from parsed flags.
+func buildSearchOptions(flags memoryFlags) *agent.MemorySearchOptions {
+	if len(flags.sourceTypes) == 0 && len(flags.tags) == 0 && flags.importance <= 0 {
+		return nil
+	}
+	return &agent.MemorySearchOptions{
+		MinImportance: flags.importance,
+		SourceTypes:   flags.sourceTypes,
+		Tags:          flags.tags,
+	}
+}
+
 // printMemoryUsage prints memory command usage information.
 func printMemoryUsage() {
 	fmt.Println("Usage: memory <search|get|write|delete> [args...]")
-	fmt.Println("  memory search <query>     - Search memory notes")
-	fmt.Println("  memory get <id>           - Get a specific note")
-	fmt.Println("  memory write <text>       - Write a new note")
-	fmt.Println("  memory delete <id>        - Delete a note")
+	fmt.Println()
+	fmt.Println("Commands:")
+	fmt.Println("  memory search [options] <query>  - Search memory notes")
+	fmt.Println("  memory get <id>                  - Get a specific note")
+	fmt.Println("  memory write [options] <text>    - Write a new note")
+	fmt.Println("  memory delete <id>               - Delete a note")
+	fmt.Println()
+	fmt.Println("Search options:")
+	fmt.Println("  --source-type TYPE     Filter by source type (comma-separated)")
+	fmt.Println("  --min-importance N     Filter by minimum importance (1-5)")
+	fmt.Println("  --tags t1,t2           Filter by tags (comma-separated)")
+	fmt.Println()
+	fmt.Println("Write options:")
+	fmt.Println("  --source-type TYPE     Set source type (default: user_message)")
+	fmt.Println("  --importance N         Set importance 1-5 (default: 3)")
+	fmt.Println("  --tags t1,t2           Set tags (comma-separated)")
+	fmt.Println()
+	fmt.Println("Source types: decision, experiment, external_source, fact, issue,")
+	fmt.Println("              plan_step, preference, requirement, retrospective,")
+	fmt.Println("              summary, tool_result, user_message")
 	fmt.Println()
 }
 

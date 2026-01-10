@@ -111,6 +111,99 @@ func (s *Service) WriteNote(ctx context.Context, note *agent.MemoryNote) error {
 	return s.store.Write(ctx, note)
 }
 
+// WriteTypedNote stores a new memory note with the specified source type.
+// This is a convenience method that uses the appropriate helper constructor.
+func (s *Service) WriteTypedNote(ctx context.Context, id agent.NoteID, sourceType agent.SourceType, content string, opts *TypedNoteOptions) error {
+	if id == "" {
+		return ErrNoteIDEmpty
+	}
+
+	note := agent.NewMemoryNote(id, sourceType).
+		WithRawContent(content).
+		WithSummary(content)
+
+	applyTypedNoteOptions(note, opts)
+
+	return s.store.Write(ctx, note)
+}
+
+// applyTypedNoteOptions applies optional parameters to a note.
+func applyTypedNoteOptions(note *agent.MemoryNote, opts *TypedNoteOptions) {
+	if opts == nil {
+		return
+	}
+	if len(opts.Tags) > 0 {
+		note.WithTags(opts.Tags...)
+	}
+	if opts.Importance > 0 {
+		note.WithImportance(opts.Importance)
+	}
+	if opts.ContextDescription != "" {
+		note.WithContextDescription(opts.ContextDescription)
+	}
+	if len(opts.Keywords) > 0 {
+		note.WithKeywords(opts.Keywords...)
+	}
+	if opts.UserID != "" {
+		note.WithUserID(opts.UserID)
+	}
+	if opts.SessionID != "" {
+		note.WithSessionID(opts.SessionID)
+	}
+	if opts.TaskID != "" {
+		note.WithTaskID(opts.TaskID)
+	}
+}
+
+// SearchBySourceTypes retrieves notes of specific source types.
+func (s *Service) SearchBySourceTypes(ctx context.Context, query string, sourceTypes []agent.SourceType, limit int) ([]*agent.MemoryNote, error) {
+	opts := &agent.MemorySearchOptions{
+		SourceTypes: sourceTypes,
+	}
+	return s.store.Search(ctx, query, limit, opts)
+}
+
+// SearchDecisions retrieves decision notes matching the query.
+func (s *Service) SearchDecisions(ctx context.Context, query string, limit int) ([]*agent.MemoryNote, error) {
+	return s.SearchBySourceTypes(ctx, query, []agent.SourceType{agent.SourceTypeDecision}, limit)
+}
+
+// SearchFacts retrieves fact notes matching the query.
+func (s *Service) SearchFacts(ctx context.Context, query string, limit int) ([]*agent.MemoryNote, error) {
+	return s.SearchBySourceTypes(ctx, query, []agent.SourceType{agent.SourceTypeFact}, limit)
+}
+
+// SearchPlanSteps retrieves plan step notes matching the query.
+func (s *Service) SearchPlanSteps(ctx context.Context, query string, limit int) ([]*agent.MemoryNote, error) {
+	return s.SearchBySourceTypes(ctx, query, []agent.SourceType{agent.SourceTypePlanStep}, limit)
+}
+
+// SearchPreferences retrieves preference notes matching the query.
+func (s *Service) SearchPreferences(ctx context.Context, query string, limit int) ([]*agent.MemoryNote, error) {
+	return s.SearchBySourceTypes(ctx, query, []agent.SourceType{agent.SourceTypePreference}, limit)
+}
+
+// SearchRequirements retrieves requirement notes matching the query.
+func (s *Service) SearchRequirements(ctx context.Context, query string, limit int) ([]*agent.MemoryNote, error) {
+	return s.SearchBySourceTypes(ctx, query, []agent.SourceType{agent.SourceTypeRequirement}, limit)
+}
+
+// SearchSummaries retrieves summary notes matching the query.
+func (s *Service) SearchSummaries(ctx context.Context, query string, limit int) ([]*agent.MemoryNote, error) {
+	return s.SearchBySourceTypes(ctx, query, []agent.SourceType{agent.SourceTypeSummary}, limit)
+}
+
+// TypedNoteOptions provides optional parameters for WriteTypedNote.
+type TypedNoteOptions struct {
+	ContextDescription string
+	SessionID          string
+	TaskID             string
+	UserID             string
+	Keywords           []string
+	Tags               []string
+	Importance         int
+}
+
 // WriteNoteUseCase handles storing memory notes.
 type WriteNoteUseCase struct {
 	store agent.MemoryStore

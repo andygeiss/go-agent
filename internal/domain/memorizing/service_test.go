@@ -322,3 +322,116 @@ func Test_WriteNoteUseCase_Execute_WithNilNote_Should_ReturnError(t *testing.T) 
 	// Assert
 	assert.That(t, "error must not be nil", err != nil, true)
 }
+
+// Service schema-focused use case tests
+
+func Test_Service_WriteTypedNote_Should_CreateAndStoreNote(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	svc := memorizing.NewService(store)
+
+	// Act
+	err := svc.WriteTypedNote(context.Background(), "note-1", agent.SourceTypeDecision, "Use PostgreSQL", nil)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "note must be stored", store.notes["note-1"] != nil, true)
+	assert.That(t, "source type must be decision", store.notes["note-1"].SourceType, agent.SourceTypeDecision)
+}
+
+func Test_Service_WriteTypedNote_WithOptions_Should_ApplyOptions(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	svc := memorizing.NewService(store)
+	opts := &memorizing.TypedNoteOptions{
+		Tags:       []string{"architecture", "database"},
+		Importance: 5,
+		UserID:     "user-1",
+	}
+
+	// Act
+	err := svc.WriteTypedNote(context.Background(), "note-1", agent.SourceTypeRequirement, "Must support 1000 users", opts)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	note := store.notes["note-1"]
+	assert.That(t, "importance must be 5", note.Importance, 5)
+	assert.That(t, "user id must match", note.UserID, "user-1")
+	assert.That(t, "tags must be set", len(note.Tags), 2)
+}
+
+func Test_Service_WriteTypedNote_WithEmptyID_Should_ReturnError(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	svc := memorizing.NewService(store)
+
+	// Act
+	err := svc.WriteTypedNote(context.Background(), "", agent.SourceTypeFact, "content", nil)
+
+	// Assert
+	assert.That(t, "error must not be nil", err != nil, true)
+}
+
+func Test_Service_SearchBySourceTypes_Should_FilterByTypes(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	store.searchNotes = []*agent.MemoryNote{
+		agent.NewMemoryNote("note-1", agent.SourceTypeDecision),
+	}
+	svc := memorizing.NewService(store)
+
+	// Act
+	results, err := svc.SearchBySourceTypes(context.Background(), "test", []agent.SourceType{agent.SourceTypeDecision}, 10)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should return results", len(results), 1)
+}
+
+func Test_Service_SearchDecisions_Should_FilterByDecisionType(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	store.searchNotes = []*agent.MemoryNote{
+		agent.NewMemoryNote("note-1", agent.SourceTypeDecision),
+	}
+	svc := memorizing.NewService(store)
+
+	// Act
+	results, err := svc.SearchDecisions(context.Background(), "architecture", 10)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should return results", len(results), 1)
+}
+
+func Test_Service_SearchFacts_Should_FilterByFactType(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	store.searchNotes = []*agent.MemoryNote{
+		agent.NewMemoryNote("note-1", agent.SourceTypeFact),
+	}
+	svc := memorizing.NewService(store)
+
+	// Act
+	results, err := svc.SearchFacts(context.Background(), "api", 10)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should return results", len(results), 1)
+}
+
+func Test_Service_SearchRequirements_Should_FilterByRequirementType(t *testing.T) {
+	// Arrange
+	store := newMockMemoryStore()
+	store.searchNotes = []*agent.MemoryNote{
+		agent.NewMemoryNote("note-1", agent.SourceTypeRequirement),
+	}
+	svc := memorizing.NewService(store)
+
+	// Act
+	results, err := svc.SearchRequirements(context.Background(), "scalability", 10)
+
+	// Assert
+	assert.That(t, "error must be nil", err, nil)
+	assert.That(t, "should return results", len(results), 1)
+}

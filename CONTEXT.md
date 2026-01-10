@@ -301,8 +301,70 @@ Available hooks (alphabetically sorted):
 Memory notes store long-term context:
 - `MemoryNote` — Atomic unit with metadata, tags, keywords, importance (1-5 scale)
 - `MemoryStore` — Interface with in-memory and JSON file implementations
-- `MemorySearchOptions` — Filter by SessionID, TaskID, UserID, or Tags
-- `SourceType` — Categorizes note origin (fact, plan_step, preference, summary, tool_result, user_message)
+- `MemorySearchOptions` — Filter by SessionID, TaskID, UserID, Tags, SourceTypes, MinImportance
+- `SourceType` — Categorizes note origin (see Memory Schemas below)
+
+**Filter architecture** (in `memory_store.go`):
+```go
+// Composite filter pattern — each filter is a small, testable function
+func matchesFilters(note *MemoryNote, opts *MemorySearchOptions) bool {
+    return matchesImportance(note, opts) &&
+           matchesScope(note, opts) &&
+           matchesSourceTypes(note, opts) &&
+           matchesTags(note, opts)
+}
+```
+
+**Service-level convenience methods** (in `memorizing/service.go`):
+- `SearchDecisions(ctx, query, limit)` — Filter by decision type
+- `SearchFacts(ctx, query, limit)` — Filter by fact type
+- `SearchPlanSteps(ctx, query, limit)` — Filter by plan step type
+- `SearchPreferences(ctx, query, limit)` — Filter by preference type
+- `SearchRequirements(ctx, query, limit)` — Filter by requirement type
+- `SearchSummaries(ctx, query, limit)` — Filter by summary type
+- `WriteTypedNote(ctx, id, sourceType, content, opts)` — Create typed notes with options
+
+### Memory schemas
+
+The `SourceType` categorizes memory notes by their semantic purpose. Each type has conventional tags and default importance levels.
+
+| SourceType | Value | Description | Default Importance | Tags |
+|------------|-------|-------------|-------------------|------|
+| `SourceTypeDecision` | `decision` | Architectural or design decisions | 4 | `decision` |
+| `SourceTypeExperiment` | `experiment` | Hypotheses and experimental results | 3 | `experiment` |
+| `SourceTypeExternalSource` | `external_source` | URLs and external references | 2 | `external`, `reference` |
+| `SourceTypeFact` | `fact` | Verified information about the system | 3 | `fact` |
+| `SourceTypeIssue` | `issue` | Problems, bugs, or blockers | 4 | `issue`, `problem` |
+| `SourceTypePlanStep` | `plan_step` | Steps in a task plan | 3 | `plan`, `step` |
+| `SourceTypePreference` | `preference` | User preferences and settings | 4 | `preference` |
+| `SourceTypeRequirement` | `requirement` | Must-have requirements | 5 | `requirement` |
+| `SourceTypeRetrospective` | `retrospective` | Lessons learned | 3 | `retrospective`, `lessons-learned` |
+| `SourceTypeSummary` | `summary` | Condensed information from multiple sources | 3 | `summary` |
+| `SourceTypeToolResult` | `tool_result` | Output from tool executions | 2 | — |
+| `SourceTypeUserMessage` | `user_message` | Direct user input | 3 | — |
+
+**Helper constructors** (in `agent/memory_note.go`):
+- `NewDecisionNote(id, content, tags...)` — High-importance decisions
+- `NewExperimentNote(id, hypothesis, result, tags...)` — Hypothesis/result pairs
+- `NewExternalSourceNote(id, url, annotation, tags...)` — URL references
+- `NewFactNote(id, content, tags...)` — Verified facts
+- `NewIssueNote(id, description, tags...)` — Bug/problem tracking
+- `NewPlanStepNote(id, content, planID, stepIndex, tags...)` — Plan steps with context
+- `NewPreferenceNote(id, content, tags...)` — User preferences
+- `NewRequirementNote(id, content, tags...)` — Critical requirements (importance 5)
+- `NewRetrospectiveNote(id, content, tags...)` — Lessons learned
+- `NewSummaryNote(id, content, sourceIDs, tags...)` — Summaries with source references
+
+**Search filters:**
+```go
+// Search for high-importance decisions and requirements
+opts := &agent.MemorySearchOptions{
+    SourceTypes:   []agent.SourceType{agent.SourceTypeDecision, agent.SourceTypeRequirement},
+    MinImportance: 4,
+    Tags:          []string{"architecture"},
+}
+notes, _ := store.Search(ctx, "database", 10, opts)
+```
 
 ### Resilience (via cloud-native-utils/stability)
 
@@ -348,6 +410,129 @@ Built-in tools (alphabetically sorted):
 - `memory_get` — Retrieve a specific note by ID
 - `memory_search` — Search notes with query and filters
 - `memory_write` — Store a new memory note
+
+---
+
+## 6.1 Refactoring patterns
+
+The codebase follows specific refactoring patterns to maintain low cyclomatic complexity and high testability.
+
+### Function extraction
+
+Complex functions are decomposed into small, single-purpose helpers:
+
+```go
+// Before: High cyclomatic complexity
+func MemorySearch(ctx context.Context, args string) (string, error) {
+    // parsing, option building, searching, marshaling all inline
+}
+
+// After: Low complexity via extraction
+func MemorySearch(ctx context.Context, args string) (string, error) {
+    opts := buildMemorySearchOpts(args)      // extracted
+    limit := defaultLimit(args.Limit, 10)    // extracted
+    notes, err := s.store.Search(ctx, args.Query, limit, opts)
+    return marshalSearchResults(notes)       // extracted
+}
+```
+
+### Composite filter pattern
+
+Filters are expressed as composable boolean functions:
+
+```go
+func matchesFilters(note *MemoryNote, opts *MemorySearchOptions) bool {
+    return matchesImportance(note, opts) &&
+           matchesScope(note, opts) &&
+           matchesSourceTypes(note, opts) &&
+           matchesTags(note, opts)
+}
+```
+
+Benefits:
+- Each filter function has complexity 1-3
+- Easy to add/remove filter criteria
+- Each filter is independently testable
+
+### Option application pattern
+
+When applying multiple optional fields, extract to a dedicated function:
+
+```go
+func applyTypedNoteOptions(note *MemoryNote, opts *TypedNoteOptions) {
+    if opts == nil { return }
+    if len(opts.Tags) > 0 { note.WithTags(opts.Tags...) }
+    if opts.Importance > 0 { note.WithImportance(opts.Importance) }
+    // ... more options
+}
+```
+
+### Prefer slices.Contains over manual loops
+
+```go
+// Instead of:
+for _, valid := range ValidSourceTypes() {
+    if st == valid { return true }
+}
+return false
+
+// Use:
+return slices.Contains(ValidSourceTypes(), st)
+```
+
+### Constructor ordering (funcorder)
+
+Constructors must be placed before struct methods:
+
+```go
+// 1. Primary constructor
+func NewMemoryNote(id NoteID, sourceType SourceType) *MemoryNote { ... }
+
+// 2. Specialized constructors (alphabetically)
+func NewDecisionNote(id NoteID, content string, tags ...string) *MemoryNote { ... }
+func NewFactNote(id NoteID, content string, tags ...string) *MemoryNote { ... }
+
+// 3. Struct methods (alphabetically)
+func (n *MemoryNote) HasKeyword(keyword string) bool { ... }
+func (n *MemoryNote) HasTag(tag string) bool { ... }
+func (n *MemoryNote) WithImportance(importance int) *MemoryNote { ... }
+```
+
+### Pre-allocation for known-size slices
+
+```go
+// Instead of:
+var result []string
+for _, part := range parts {
+    result = append(result, process(part))
+}
+
+// Use:
+result := make([]string, 0, len(parts))
+for _, part := range parts {
+    result = append(result, process(part))
+}
+```
+
+### strings.Builder for loop concatenation
+
+```go
+// Instead of:
+contextDesc := "Summarizes notes: "
+for i, srcID := range sourceIDs {
+    if i > 0 { contextDesc += ", " }
+    contextDesc += srcID
+}
+
+// Use:
+var b strings.Builder
+b.WriteString("Summarizes notes: ")
+for i, srcID := range sourceIDs {
+    if i > 0 { b.WriteString(", ") }
+    b.WriteString(srcID)
+}
+result := b.String()
+```
 
 ---
 
