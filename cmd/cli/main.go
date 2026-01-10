@@ -23,8 +23,6 @@ import (
 const defaultSystemPrompt = `You are a helpful AI assistant with access to tools and long-term memory.
 
 Available tools:
-- calculate: Perform arithmetic calculations (e.g., "2 + 2", "10 * 5")
-- get_current_time: Get the current date and time
 - index.scan: Scan directories and create a snapshot of files
 - index.changed_since: Get files changed since a timestamp
 - index.diff_snapshot: Compare two snapshots for changes
@@ -868,16 +866,6 @@ func generateSnapshotID() string {
 
 // registerTools registers all available tools with the executor.
 func registerTools(executor *outbound.ToolExecutor, memoryToolSvc *tooling.MemoryToolService, indexToolSvc *tooling.IndexToolService) {
-	// Register calculate tool
-	calculateTool := tooling.NewCalculateTool()
-	executor.RegisterTool(string(calculateTool.ID), calculateTool.Func)
-	executor.RegisterToolDefinition(calculateTool.Definition)
-
-	// Register get_current_time tool
-	timeTool := tooling.NewGetCurrentTimeTool()
-	executor.RegisterTool(string(timeTool.ID), timeTool.Func)
-	executor.RegisterToolDefinition(timeTool.Definition)
-
 	// Register index.changed_since tool
 	indexChangedSinceTool := tooling.NewIndexChangedSinceTool(indexToolSvc)
 	executor.RegisterTool(string(indexChangedSinceTool.ID), indexChangedSinceTool.Func)

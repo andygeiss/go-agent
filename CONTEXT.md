@@ -55,7 +55,7 @@ The project follows **hexagonal architecture** (ports and adapters) with **domai
 │  │ agent/        Core agent aggregate, task service, types     ││
 │  │ chatting/     Use cases: SendMessage, ClearConversation     ││
 │  │ memorizing/   Use cases: WriteNote, SearchNotes, GetNote    ││
-│  │ tooling/      Tool implementations (calculate, time, etc.)  ││
+│  │ tooling/      Tool implementations (index, memory)          ││
 │  │ openai/       OpenAI API data structures (value objects)    ││
 │  └─────────────────────────────────────────────────────────────┘│
 └──────────────────────────────┬──────────────────────────────────┘
@@ -132,10 +132,8 @@ go-agent/
 │       │   ├── response.go     # ChatCompletionResponse + ChatCompletionChoice + ChatCompletionUsage
 │       │   └── tool.go         # FunctionCall + FunctionDefinition + Tool + ToolCall
 │       └── tooling/            # Tool implementations
-│           ├── calculate.go    # Arithmetic calculator with expression parser
 │           ├── index_tools.go  # IndexToolService (IndexScan, IndexChangedSince, IndexDiffSnapshot)
-│           ├── memory_tools.go # MemoryToolService (MemoryGet, MemorySearch, MemoryWrite)
-│           └── time.go         # Current time (RFC3339 format)
+│           └── memory_tools.go # MemoryToolService (MemoryGet, MemorySearch, MemoryWrite)
 ├── AGENTS.md                   # Agent definitions index
 ├── CONTEXT.md                  # This file (architecture documentation)
 ├── Dockerfile                  # Multi-stage build
@@ -267,7 +265,7 @@ func Test_Agent_AddTask_With_Task_Should_AddToQueue(t *testing.T) {
 - **Message Handling Benchmarks** — Message creation and trimming
 - **Snapshot Benchmarks** — Snapshot object creation and method performance
 - **Task Service Benchmarks** — Task execution with various tool patterns
-- **Tool Execution Benchmarks** — Real tool execution (calculate, time)
+- **Tool Execution Benchmarks** — Tool execution with mock and real tools
 
 **Patterns:**
 - Create test helpers in `shared_test.go`
@@ -438,14 +436,13 @@ The `OpenAIClient` wraps LLM calls with configurable resilience:
 ### Tool registration
 
 ```go
-tool := tooling.NewCalculateTool()
-executor.RegisterTool("calculate", tool.Func)
+memoryToolSvc := tooling.NewMemoryToolService(store, idGenerator)
+tool := tooling.NewMemoryGetTool(memoryToolSvc)
+executor.RegisterTool(string(tool.ID), tool.Func)
 executor.RegisterToolDefinition(tool.Definition)
 ```
 
 Built-in tools (alphabetically sorted):
-- `calculate` — Safe arithmetic expression evaluator with operator precedence
-- `get_current_time` — Returns current date/time in RFC3339 format
 - `index.changed_since` — Find files modified after a timestamp
 - `index.diff_snapshot` — Compare two snapshots to find added/changed/removed files
 - `index.scan` — Scan directories and create a file system snapshot

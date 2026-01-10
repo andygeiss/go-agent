@@ -79,6 +79,9 @@ package main
 
 import (
     "context"
+    "fmt"
+    "time"
+
     "github.com/andygeiss/cloud-native-utils/messaging"
     "github.com/andygeiss/go-agent/internal/adapters/outbound"
     "github.com/andygeiss/go-agent/internal/domain/agent"
@@ -91,11 +94,14 @@ func main() {
     llmClient := outbound.NewOpenAIClient("http://localhost:1234", "your-model")
     toolExecutor := outbound.NewToolExecutor()
     publisher := outbound.NewEventPublisher(dispatcher)
+    memoryStore := outbound.NewMemoryStore()
 
     // Register tools
-    calcTool := tooling.NewCalculateTool()
-    toolExecutor.RegisterTool("calculate", calcTool.Func)
-    toolExecutor.RegisterToolDefinition(calcTool.Definition)
+    idGen := func() string { return fmt.Sprintf("note-%d", time.Now().UnixNano()) }
+    memoryToolSvc := tooling.NewMemoryToolService(memoryStore, idGen)
+    memoryGetTool := tooling.NewMemoryGetTool(memoryToolSvc)
+    toolExecutor.RegisterTool(string(memoryGetTool.ID), memoryGetTool.Func)
+    toolExecutor.RegisterToolDefinition(memoryGetTool.Definition)
 
     // Create agent
     ag := agent.NewAgent("my-agent", "You are a helpful assistant.",
@@ -105,7 +111,7 @@ func main() {
 
     // Create task service and run
     taskService := agent.NewTaskService(llmClient, toolExecutor, publisher)
-    task := agent.NewTask("task-1", "chat", "What is 42 * 17?")
+    task := agent.NewTask("task-1", "chat", "What do you remember about my preferences?")
     
     result, _ := taskService.RunTask(context.Background(), &ag, task)
     println(result.Output)
@@ -166,8 +172,6 @@ For detailed architecture documentation, see [CONTEXT.md](CONTEXT.md).
 
 | Tool | Description |
 |------|-------------|
-| `calculate` | Safe arithmetic expression evaluator with operator precedence |
-| `get_current_time` | Returns current date and time in RFC3339 format |
 | `index.changed_since` | Find files modified after a given timestamp |
 | `index.diff_snapshot` | Compare two snapshots to find added/changed/removed files |
 | `index.scan` | Scan directories and create a file system snapshot |
@@ -453,7 +457,6 @@ The CLI benchmarks (`cmd/cli/main_test.go`) cover all domain contexts:
 | `Benchmark_*NoteUseCase` | Domain use case benchmarks |
 | `Benchmark_NewFileInfo` | FileInfo object creation |
 | `Benchmark_NewSnapshot` | Snapshot object creation |
-| `Benchmark_RealToolExecutor_*` | calculate, time tools |
 | `Benchmark_SendMessageUseCase_*` | Chat use case execution |
 | `Benchmark_Snapshot_*` | Snapshot method performance |
 | `Benchmark_TaskService_*` | Task service with hooks/parallelism |
@@ -483,7 +486,7 @@ go-agent/
 │       ├── indexing/       # File indexing (Scan, ChangedSince, DiffSnapshots)
 │       ├── memorizing/     # Memory use cases (WriteNote, GetNote, SearchNotes, DeleteNote)
 │       ├── openai/         # OpenAI API types (Request, Response, Tool)
-│       └── tooling/        # Tool implementations (calculate, time, memory, index)
+│       └── tooling/        # Tool implementations (memory, index)
 ├── AGENTS.md               # AI agent definitions
 ├── CONTEXT.md              # Architecture documentation
 ├── Dockerfile
